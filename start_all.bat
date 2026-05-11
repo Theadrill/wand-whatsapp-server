@@ -1,18 +1,23 @@
 @echo off
+setlocal
+cd /d "%~dp0"
+
 title W.A.N.D. Manager
-echo === W.A.N.D. Integrated Startup ===
+echo === W.A.N.D. Integrated Startup (Silent Mode) ===
 
-echo [1/2] Limpando processos antigos...
-taskkill /f /fi "windowtitle eq W.A.N.D. Server" >nul 2>&1
-taskkill /f /fi "windowtitle eq W.A.N.D. Client" >nul 2>&1
+echo [1/2] Limpando processos antigos (Server e Client)...
+:: Mata processos Node que estão rodando o server.js
+powershell -Command "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like '*server.js*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >nul 2>&1
+:: Mata processos Python que estão rodando o client/main.py
+powershell -Command "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like '*client/main.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >nul 2>&1
 
-echo [2/2] Iniciando Server e Client...
-start "W.A.N.D. Server" cmd /c "start_server.bat"
-timeout /t 2 >nul
-start "W.A.N.D. Client" cmd /c "start_client.bat"
+echo [2/2] Iniciando Server e Client em segundo plano...
+:: Usa o VBS para rodar sem abrir janelas de terminal
+cscript //nologo run_hidden.vbs
 
 echo.
-echo Tudo pronto! O Servidor e o Cliente estao subindo em janelas separadas.
-echo Voce pode fechar esta janela se desejar.
+echo Concluido! O servidor e o cliente estao rodando em segundo plano.
+echo Os icones devem aparecer na bandeja do sistema (perto do relogio).
+echo.
 timeout /t 5
 exit

@@ -2,7 +2,7 @@ import SysTray from 'systray2';
 import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,6 +27,10 @@ function getMenuConfig(connected = false) {
       items: [
         {
           title: '🌐 Abrir Interface',
+          enabled: true
+        },
+        {
+          title: '🔄 Reiniciar Servidor',
           enabled: true
         },
         {
@@ -57,7 +61,7 @@ export async function setupTray() {
     
     console.log('[Tray] Ícone da bandeja carregado e pronto.');
 
-    systray.onClick((action) => {
+    systray.onClick(async (action) => {
       const title = action.item.title;
 
       if (title.includes('Abrir Interface')) {
@@ -66,6 +70,25 @@ export async function setupTray() {
         const command = os.platform() === 'win32' ? `start ${url}` : `open ${url}`;
         exec(command);
       } 
+      else if (title.includes('Reiniciar Servidor')) {
+        console.log('[System] Reiniciando Servidor...');
+        
+        // Mata a bandeja atual antes de sair
+        systray.kill();
+
+        // Faz o spawn de uma nova instância do mesmo processo
+        const child = spawn(process.argv[0], process.argv.slice(1), {
+          detached: true,
+          stdio: 'ignore',
+          cwd: process.cwd()
+        });
+
+        // Desvincula o processo filho para que ele continue rodando
+        child.unref();
+
+        // Encerra o processo atual
+        process.exit(0);
+      }
       else if (title.includes('Sair e Encerrar')) {
         console.log('[System] Encerrando via Tray...');
         systray.kill();

@@ -7,6 +7,8 @@ class ToastNotification(ctk.CTkToplevel):
         self.title("W.A.N.D. Notification")
         self.overrideredirect(True)
         self.attributes("-topmost", True)
+        self.attributes("-toolwindow", True)
+        self.lift()
         
         # Truque para cantos arredondados: janela transparente e frame interno arredondado
         transparent_color = "#000001"
@@ -90,3 +92,12 @@ class ToastNotification(ctk.CTkToplevel):
             font=ctk.CTkFont(family="Segoe UI", size=13)
         )
         self.lbl_message.grid(row=1, column=0, sticky="w", padx=15, pady=(5, 20))
+
+        # Inicia o loop para manter no topo de tudo (incluindo jogos borderless)
+        self.force_on_top()
+
+    def force_on_top(self):
+        if self.winfo_exists():
+            self.attributes("-topmost", True)
+            self.lift()
+            self.after(2000, self.force_on_top)
