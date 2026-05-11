@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 import customtkinter as ctk
 from config_manager import CONFIG
 
@@ -10,10 +11,11 @@ class ToastNotification(ctk.CTkToplevel):
         self.attributes("-toolwindow", True)
         self.lift()
         
-        # Truque para cantos arredondados: janela transparente e frame interno arredondado
+        # Janela transparente
         transparent_color = "#000001"
         self.attributes("-transparentcolor", transparent_color)
         self.configure(fg_color=transparent_color)
+        self.config(bg=transparent_color)
         
         width = CONFIG['toast_width']
         height = CONFIG['toast_height']
@@ -24,42 +26,62 @@ class ToastNotification(ctk.CTkToplevel):
         y = screen_height - height - 60
         self.geometry(f"{width}x{height}+{x}+{y}")
 
-        # Container Principal Arredondado
+        # CONTAINER MOLDURA (Transparente com Borda de 1px)
         self.container = ctk.CTkFrame(
             self, 
-            fg_color="#1EA952", 
-            corner_radius=15, 
-            border_width=1, 
+            fg_color="transparent", 
+            corner_radius=15,
+            border_width=1,
             border_color="#075E54"
         )
-        self.container.pack(fill="both", expand=True, padx=2, pady=2)
+        self.container.pack(fill="both", expand=True)
 
-        self.container.grid_columnconfigure(0, weight=1)
-        
-        # Header
-        self.header_frame = ctk.CTkFrame(self.container, fg_color="transparent")
-        self.header_frame.grid(row=0, column=0, sticky="ew", padx=15, pady=(12, 0))
-        self.header_frame.grid_columnconfigure(0, weight=1)
-
-        # Sombra do Nome
-        self.lbl_sender_shadow = ctk.CTkLabel(
-            self.header_frame, 
-            text=sender, 
-            font=ctk.CTkFont(family="Segoe UI", weight="bold", size=15), 
-            text_color="#075E54"
+        # TOPO (Verde Escuro)
+        self.top_bg = ctk.CTkFrame(
+            self.container,
+            fg_color="#0F5429",
+            corner_radius=14,
+            height=50
         )
-        self.lbl_sender_shadow.grid(row=0, column=0, sticky="w", padx=(1, 0), pady=(1, 0))
+        self.top_bg.place(relx=0, rely=0, relwidth=1)
 
+        # FILLER DO TOPO (Achata a base do título)
+        self.top_filler = ctk.CTkFrame(
+            self.top_bg,
+            fg_color="#0F5429",
+            corner_radius=14,
+            height=20
+        )
+        self.top_filler.place(relx=0, rely=0.6, relwidth=1)
+
+        # CORPO (Verde Médio)
+        self.bottom_bg = ctk.CTkFrame(
+            self.container,
+            fg_color="#188741",
+            corner_radius=14
+        )
+        self.bottom_bg.place(relx=0, y=50, relwidth=1, relheight=0.68)
+
+        # FILLER DO CORPO (Encaixe perfeito na divisa)
+        self.bottom_filler = ctk.CTkFrame(
+            self.bottom_bg,
+            fg_color="#188741",
+            corner_radius=0,
+            height=20
+        )
+        self.bottom_filler.place(relx=0, rely=0, relwidth=1)
+
+        # Título
         self.lbl_sender = ctk.CTkLabel(
-            self.header_frame, 
+            self.top_bg, 
             text=sender, 
             font=ctk.CTkFont(family="Segoe UI", weight="bold", size=15), 
             text_color="#FFFFFF"
         )
-        self.lbl_sender.grid(row=0, column=0, sticky="w")
+        self.lbl_sender.place(relx=0.05, rely=0.25)
 
         self.btn_close = ctk.CTkButton(
-            self.header_frame, 
+            self.top_bg, 
             text="✕", 
             width=30, 
             height=30, 
@@ -69,31 +91,19 @@ class ToastNotification(ctk.CTkToplevel):
             font=ctk.CTkFont(size=16),
             command=self.destroy
         )
-        self.btn_close.grid(row=0, column=1, sticky="e")
+        self.btn_close.place(relx=0.88, rely=0.2)
 
-        # Sombra da Mensagem
-        self.lbl_message_shadow = ctk.CTkLabel(
-            self.container, 
-            text=message, 
-            wraplength=width-40, 
-            justify="left", 
-            text_color="#075E54",
-            font=ctk.CTkFont(family="Segoe UI", size=13)
-        )
-        self.lbl_message_shadow.grid(row=1, column=0, sticky="w", padx=(16, 0), pady=(6, 21))
-
-        # Mensagem Principal
+        # Mensagem
         self.lbl_message = ctk.CTkLabel(
-            self.container, 
+            self.bottom_bg, 
             text=message, 
             wraplength=width-40, 
             justify="left", 
             text_color="#F0F2F5",
             font=ctk.CTkFont(family="Segoe UI", size=13)
         )
-        self.lbl_message.grid(row=1, column=0, sticky="w", padx=15, pady=(5, 20))
+        self.lbl_message.place(relx=0.05, rely=0.2)
 
-        # Inicia o loop para manter no topo de tudo (incluindo jogos borderless)
         self.force_on_top()
 
     def force_on_top(self):
