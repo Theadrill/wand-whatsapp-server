@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>W.A.N.D. | WhatsApp Notification Devices</title>
+    <style>
+        :root {
+            --bg-color: #0b141a;
+            --container-bg: #111b21;
+            --primary-color: #00a884;
+            --text-main: #e9edef;
+            --text-secondary: #8696a0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+
+        .container {
+            text-align: center;
+            background-color: var(--container-bg);
+            padding: 3rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+            max-width: 400px;
+            width: 90%;
+            transition: all 0.3s ease;
+        }
+
+        h1 { 
+            color: var(--primary-color); 
+            margin-top: 0;
+            font-size: 2.5rem;
+            letter-spacing: 2px;
+        }
+
+        p { color: var(--text-secondary); line-height: 1.5; }
+
+        #status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            margin-bottom: 1.5rem;
+            background-color: #3b4a54;
+        }
+
+        #qr-container {
+            background-color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 2rem 0;
+            display: none; /* Escondido por padrão */
+            animation: fadeIn 0.5s ease;
+        }
+
+        #qrcode {
+            width: 100%;
+            max-width: 250px;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
+
+        .online-msg {
+            display: none;
+            color: var(--primary-color);
+            font-weight: bold;
+            font-size: 1.2rem;
+            margin: 2rem 0;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .loader {
+            border: 3px solid #3b4a54;
+            border-top: 3px solid var(--primary-color);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>W.A.N.D.</h1>
+        <div id="status-badge">Iniciando...</div>
+        
+        <p id="instruction">Para configurar o dispositivo, escaneie o código abaixo com o seu WhatsApp.</p>
+        
+        <div id="qr-container">
+            <img id="qrcode" src="" alt="WhatsApp QR Code">
+        </div>
+
+        <div id="loading-area">
+            <div class="loader"></div>
+            <span>Aguardando servidor...</span>
+        </div>
+
+        <div id="online-msg" class="online-msg">
+            ✅ Servidor Conectado e Ativo
+        </div>
+    </div>
+
+    <script>
+        const statusBadge = document.getElementById('status-badge');
+        const qrContainer = document.getElementById('qr-container');
+        const qrImage = document.getElementById('qrcode');
+        const instruction = document.getElementById('instruction');
+        const onlineMsg = document.getElementById('online-msg');
+        const loadingArea = document.getElementById('loading-area');
+
+        // Conecta ao WebSocket do servidor (mesma porta do HTTP)
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${window.location.host}`);
+
+        ws.onopen = () => {
+            statusBadge.innerText = 'Conectado ao Servidor';
+            statusBadge.style.backgroundColor = '#005c4b';
+        };
+
+        ws.onmessage = (event) => {
+            const message = JSON.parse(event.data);
+            console.log('Recebido:', message.type);
+
+            if (message.type === 'qrcode') {
+                loadingArea.style.display = 'none';
+                qrContainer.style.display = 'block';
+                qrImage.src = message.data;
+                statusBadge.innerText = 'Aguardando Escaneamento';
+            }
+
+            if (message.type === 'status' && message.data === 'connected') {
+                qrContainer.style.display = 'none';
+                loadingArea.style.display = 'none';
+                instruction.style.display = 'none';
+                onlineMsg.style.display = 'block';
+                statusBadge.innerText = 'ONLINE';
+                statusBadge.style.backgroundColor = '#00a884';
+            }
+        };
+
+        ws.onclose = () => {
+            statusBadge.innerText = 'Desconectado';
+            statusBadge.style.backgroundColor = '#ea0038';
+            loadingArea.style.display = 'block';
+            loadingArea.querySelector('span').innerText = 'Reconectando ao servidor...';
+        };
+    </script>
+</body>
+</html>
