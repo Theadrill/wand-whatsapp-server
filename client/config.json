@@ -1,0 +1,13 @@
+{
+    "server_hosts": [
+        "localhost",
+        "127.0.0.1",
+        "pcrodrigoxeon-1",
+        "pcfavela",
+        "pcmaria"
+    ],
+    "server_port": 4750,
+    "reconnect_delay": 5,
+    "toast_width": 350,
+    "toast_height": 100
+}

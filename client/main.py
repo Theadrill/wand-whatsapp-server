@@ -8,13 +8,30 @@ import pystray
 from PIL import Image
 import sys
 
-# Configurações
-HOSTNAME = "localhost"
-PORT = 3000
-WS_URL = f"ws://{HOSTNAME}:{PORT}"
+# Caminhos de arquivos
+BASE_DIR = os.path.dirname(__file__)
+CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+ICON_PATH = os.path.join(BASE_DIR, "icon_client.ico")
 
-# Caminho para o ícone
-ICON_PATH = os.path.join(os.path.dirname(__file__), "icon_client.ico")
+def load_config():
+    """Carrega as configurações do arquivo JSON"""
+    default_config = {
+        "server_hosts": ["localhost"],
+        "server_port": 4750,
+        "reconnect_delay": 5,
+        "toast_width": 350,
+        "toast_height": 100
+    }
+    try:
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, 'r') as f:
+                return {**default_config, **json.load(f)}
+    except Exception as e:
+        print(f"[Config] Erro ao carregar config.json: {e}")
+    return default_config
+
+# Carrega a configuração globalmente
+CONFIG = load_config()
 
 class ToastNotification(ctk.CTkToplevel):
     def __init__(self, master, sender, message):
@@ -24,7 +41,9 @@ class ToastNotification(ctk.CTkToplevel):
         self.attributes("-topmost", True)
         self.configure(fg_color="#111b21")
         
-        width, height = 350, 100
+        width = CONFIG['toast_width']
+        height = CONFIG['toast_height']
+        
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
         x = screen_width - width - 20
@@ -36,13 +55,13 @@ class ToastNotification(ctk.CTkToplevel):
         self.header_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(5, 0))
         self.header_frame.grid_columnconfigure(0, weight=1)
 
-        self.lbl_sender = ctk.CTkLabel(self.header_frame, text=sender, font=ctk.CTkFont(weight="bold", size=14), text_color="#ffcc00") # Amarelo para combinar
+        self.lbl_sender = ctk.CTkLabel(self.header_frame, text=sender, font=ctk.CTkFont(weight="bold", size=14), text_color="#ffcc00")
         self.lbl_sender.grid(row=0, column=0, sticky="w")
 
         self.btn_close = ctk.CTkButton(self.header_frame, text="X", width=20, height=20, fg_color="transparent", hover_color="#ea0038", command=self.destroy)
         self.btn_close.grid(row=0, column=1, sticky="e")
 
-        self.lbl_message = ctk.CTkLabel(self, text=message, wraplength=330, justify="left", text_color="#e9edef")
+        self.lbl_message = ctk.CTkLabel(self, text=message, wraplength=width-20, justify="left", text_color="#e9edef")
         self.lbl_message.grid(row=1, column=0, sticky="w", padx=10, pady=(0, 10))
 
 class WANDClient:
@@ -55,16 +74,16 @@ class WANDClient:
         self.msg_queue = []
         self.tray_icon = None
         self.is_running = True
+        self.current_host_idx = 0
         
         self.setup_tray()
         self.check_queue()
 
     def setup_tray(self):
-        """Inicializa a bandeja do sistema (ícone amarelo)"""
         try:
             image = Image.open(ICON_PATH)
             menu = (
-                pystray.MenuItem("W.A.N.D. Client (Conectado)", lambda: None, enabled=False),
+                pystray.MenuItem("W.A.N.D. Client", lambda: None, enabled=False),
                 pystray.Menu.SEPARATOR,
                 pystray.MenuItem("Sair", self.quit_app)
             )
@@ -74,7 +93,6 @@ class WANDClient:
             print(f"[Tray] Erro ao carregar bandeja: {e}")
 
     def quit_app(self):
-        """Encerra o cliente completamente"""
         self.is_running = False
         if self.tray_icon:
             self.tray_icon.stop()
@@ -93,17 +111,28 @@ class WANDClient:
         self.root.after(100, self.check_queue)
 
     async def listen(self):
+        hosts = CONFIG['server_hosts']
+        port = CONFIG['server_port']
+        
         while self.is_running:
+            host = hosts[self.current_host_idx]
+            ws_url = f"ws://{host}:{port}"
+            
             try:
-                async with websockets.connect(WS_URL) as websocket:
-                    print("[WS] Conectado ao W.A.N.D. Server!")
+                print(f"[WS] Tentando conectar em {ws_url}...")
+                async with websockets.connect(ws_url) as websocket:
+                    print(f"[WS] Conectado com sucesso em {ws_url}")
                     while self.is_running:
                         message = await websocket.recv()
                         data = json.loads(message)
                         self.msg_queue.append(data)
-            except Exception:
+            except Exception as e:
                 if self.is_running:
-                    await asyncio.sleep(5)
+                    # Rotaciona para o próximo host se falhar
+                    self.current_host_idx = (self.current_host_idx + 1) % len(hosts)
+                    next_host = hosts[self.current_host_idx]
+                    print(f"[WS] Falha em {host}. Próximo: {next_host} em {CONFIG['reconnect_delay']}s...")
+                    await asyncio.sleep(CONFIG['reconnect_delay'])
 
     def start_ws_thread(self):
         def run_async():
@@ -116,7 +145,7 @@ class WANDClient:
 
     def run(self):
         self.start_ws_thread()
-        print("[System] W.A.N.D. Client iniciado (Tray ativa).")
+        print(f"[System] W.A.N.D. Client iniciado.")
         self.root.mainloop()
 
 if __name__ == "__main__":

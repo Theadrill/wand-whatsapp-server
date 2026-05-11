@@ -24,7 +24,8 @@ async function bootstrap() {
     connectToWhatsApp();
     
     // Inicia a escuta na porta configurada
-    start();
+    const PORT = process.env.PORT || 4750;
+    start(PORT);
     
     console.log('[System] Servidor HTTP e WS prontos.');
   } catch (error) {
