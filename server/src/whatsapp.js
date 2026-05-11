@@ -99,11 +99,16 @@ export async function connectToWhatsApp() {
           // if (msg.key.fromMe) continue;
           if (msg.key.remoteJid === 'status@broadcast') continue;
 
-          const text = msg.message?.conversation || 
-                       msg.message?.extendedTextMessage?.text || 
-                       msg.message?.imageMessage?.caption || 
-                       msg.message?.videoMessage?.caption || 
-                       '';
+          let text = msg.message?.conversation || 
+                     msg.message?.extendedTextMessage?.text || 
+                     msg.message?.imageMessage?.caption || 
+                     msg.message?.videoMessage?.caption || 
+                     '';
+
+          // Se for uma figurinha, definimos um texto padrão para disparar o Toast
+          if (!text && msg.message?.stickerMessage) {
+            text = '[Figurinha]';
+          }
 
           if (!text) continue;
 

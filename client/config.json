@@ -1,5 +1,6 @@
 {
     "server_hosts": [
+        "steamdeck",
         "localhost",
         "127.0.0.1",
         "pcrodrigoxeon-1",
