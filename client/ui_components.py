@@ -99,10 +99,10 @@ class ToastNotification(ctk.CTkToplevel):
             text=message, 
             wraplength=width-40, 
             justify="left", 
-            text_color="#F0F2F5",
-            font=ctk.CTkFont(family="Segoe UI", size=13)
+            text_color="#E9EDEF", # Cor oficial de texto do WhatsApp para melhor leitura
+            font=ctk.CTkFont(family="Segoe UI Variable Text", size=13)
         )
-        self.lbl_message.place(relx=0.05, rely=0.2)
+        self.lbl_message.place(relx=0.06, rely=0.10)
 
         self.force_on_top()
 

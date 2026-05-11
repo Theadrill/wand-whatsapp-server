@@ -8,8 +8,8 @@ echo === W.A.N.D. Integrated Startup (Silent Mode) ===
 echo [1/2] Limpando processos antigos (Server e Client)...
 :: Mata processos Node que estão rodando o server.js
 powershell -Command "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like '*server.js*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >nul 2>&1
-:: Mata processos Python que estão rodando o client/main.py
-powershell -Command "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like '*client/main.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >nul 2>&1
+:: Mata processos Python que estão rodando o main.py
+powershell -Command "Get-WmiObject Win32_Process | Where-Object { $_.CommandLine -like '*main.py*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >nul 2>&1
 
 echo [2/2] Iniciando Server e Client em segundo plano...
 :: Usa o VBS para rodar sem abrir janelas de terminal

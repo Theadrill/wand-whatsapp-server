@@ -3,6 +3,7 @@ import path from 'path';
 import os from 'os';
 import { fileURLToPath } from 'url';
 import { exec, spawn } from 'child_process';
+import { resetSession } from './whatsapp.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -27,6 +28,10 @@ function getMenuConfig(connected = false) {
       items: [
         {
           title: '🌐 Abrir Interface',
+          enabled: true
+        },
+        {
+          title: '🔑 Re-autenticar',
           enabled: true
         },
         {
@@ -70,6 +75,24 @@ export async function setupTray() {
         const command = os.platform() === 'win32' ? `start ${url}` : `open ${url}`;
         exec(command);
       } 
+      else if (title.includes('Re-autenticar')) {
+        // Comando PowerShell para exibir diálogo Yes/No nativo
+        const psCommand = `powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Deseja realmente desconectar e gerar um novo QR Code?', 'W.A.N.D. - Confirmacao', 'YesNo', 'Warning')"`;
+        
+        exec(psCommand, async (error, stdout) => {
+          if (stdout.trim() === 'Yes') {
+            console.log('[System] Resetando sessão por solicitação do usuário...');
+            const success = await resetSession();
+            
+            if (success) {
+              const port = process.env.PORT || 4750;
+              const url = `http://localhost:${port}`;
+              const openCmd = os.platform() === 'win32' ? `start ${url}` : `open ${url}`;
+              exec(openCmd);
+            }
+          }
+        });
+      }
       else if (title.includes('Reiniciar Servidor')) {
         console.log('[System] Reiniciando Servidor...');
         

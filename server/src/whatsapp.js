@@ -8,12 +8,33 @@ import QRCode from 'qrcode';
 import pino from 'pino';
 import { broadcast } from './websocket.js';
 import { updateTrayStatus } from './tray.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Carregamento de configuração
+const configPath = path.resolve(__dirname, '../config.json');
+let config = { allow_self_messages: false };
+
+try {
+  if (fs.existsSync(configPath)) {
+    const data = fs.readFileSync(configPath, 'utf8');
+    config = JSON.parse(data);
+    console.log('[Config] Servidor carregado:', config);
+  }
+} catch (err) {
+  console.error('[Config] Erro ao carregar config.json:', err.message);
+}
 
 // Logger configurado para erro para evitar poluição, conforme o projeto de referência
 const logger = pino({ level: 'error' });
 
 // Trava de conexão para evitar múltiplas instâncias
 let isConnecting = false;
+let sock = null;
 
 /**
  * Inicializa a conexão com o WhatsApp
@@ -28,7 +49,7 @@ export async function connectToWhatsApp() {
 
     console.log(`[WhatsApp] Iniciando conexão (Baileys v${version.join('.')})...`);
 
-    const sock = makeWASocket({
+    sock = makeWASocket({
       version,
       auth: state,
       logger,
@@ -93,15 +114,24 @@ export async function connectToWhatsApp() {
     // ... (restante do código de mensagens)
 
     sock.ev.on('messages.upsert', async (m) => {
-      if (m.type === 'notify') {
+      // Aceita notify (novas) e append (enviadas por mim/sync)
+      if (m.type === 'notify' || m.type === 'append') {
         for (const msg of m.messages) {
-          // 1. Ignora mensagens enviadas por mim mesmo (evita eco)
-          if (msg.key.fromMe) continue;
+          const isMe = msg.key.fromMe;
+          
+          // Log para debug
+          if (isMe) {
+            console.log(`[WhatsApp] Mensagem própria detectada. allow_self: ${config.allow_self_messages}`);
+          }
 
-          // 2. Filtros de JID (Status e grupos problemáticos)
+          // 1. Filtro de mensagens próprias (opcional via config)
+          if (isMe && !config.allow_self_messages) continue;
+
+          // 2. Filtros de JID (Status, Grupos bloqueados e Canais/Newsletters)
           const BLACKLIST = [
             '120363404701403742',
-            'status@broadcast'
+            'status@broadcast',
+            '@newsletter'
           ];
           if (BLACKLIST.some(id => msg.key.remoteJid.includes(id))) continue;
 
@@ -147,4 +177,39 @@ export async function connectToWhatsApp() {
     console.error('[WhatsApp] Erro fatal na conexão:', error);
     setTimeout(() => connectToWhatsApp(), 10000);
   }
+}
+
+/**
+ * Reseta a sessão atual, forçando um novo QR Code
+ */
+export async function resetSession() {
+  console.log('[WhatsApp] Iniciando reset de sessão...');
+  
+  if (sock) {
+    try {
+      sock.logout();
+      sock.end();
+    } catch (e) {
+      console.log('[WhatsApp] Aviso ao fechar socket:', e.message);
+    }
+  }
+
+  // Pequena pausa para garantir que o SO liberou os arquivos
+  await new Promise(resolve => setTimeout(resolve, 1000));
+
+  const authPath = path.resolve(__dirname, '../auth_info_baileys');
+  if (fs.existsSync(authPath)) {
+    try {
+      fs.rmSync(authPath, { recursive: true, force: true });
+      console.log('[WhatsApp] Pasta de autenticação removida.');
+    } catch (err) {
+      console.error('[WhatsApp] Erro ao remover pasta de autenticação:', err.message);
+      return false;
+    }
+  }
+
+  isConnecting = false;
+  sock = null;
+  connectToWhatsApp();
+  return true;
 }

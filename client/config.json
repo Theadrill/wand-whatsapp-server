@@ -1,14 +1,14 @@
 {
     "server_hosts": [
-        "steamdeck",
         "localhost",
+        "steamdeck",
         "127.0.0.1",
         "pcrodrigoxeon-1",
         "pcfavela",
         "pcmaria"
     ],
     "server_port": 4750,
-    "reconnect_delay": 5,
+    "reconnect_delay": 2,
     "toast_width": 375,
     "toast_height": 150
 }
