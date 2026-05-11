@@ -1,13 +1,14 @@
 import makeWASocket, { 
   useMultiFileAuthState, 
   DisconnectReason, 
-  fetchLatestBaileysVersion 
+  fetchLatestBaileysVersion
 } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import QRCode from 'qrcode';
 import pino from 'pino';
 import { broadcast } from './websocket.js';
 import { updateTrayStatus } from './tray.js';
+import { processSticker } from './mediaHandler.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -149,22 +150,30 @@ export async function connectToWhatsApp() {
                      msg.message?.videoMessage?.caption || 
                      '';
 
-          // Se for uma figurinha, definimos um texto padrão para disparar o Toast
-          if (!text && msg.message?.stickerMessage) {
+          // Detecta figurinha (inclusive em mensagens temporárias ou view once)
+          const stickerMessage = msg.message?.stickerMessage || 
+                                msg.message?.ephemeralMessage?.message?.stickerMessage ||
+                                msg.message?.viewOnceMessage?.message?.stickerMessage ||
+                                msg.message?.viewOnceMessageV2?.message?.stickerMessage;
+
+          let stickerBase64 = null;
+          if (stickerMessage) {
             text = '[Figurinha]';
+            stickerBase64 = await processSticker(msg, sock.logger);
           }
 
           if (!text) continue;
 
           const sender = msg.pushName || msg.key.remoteJid.split('@')[0];
           
-          console.log(`[WhatsApp] ${sender}: ${text}`);
+          console.log(`[WhatsApp] ${sender}: ${text} ${stickerBase64 ? '(com preview)' : ''}`);
 
           broadcast({
             type: 'message',
             data: {
               from: sender,
               text: text,
+              sticker: stickerBase64,
               timestamp: Date.now()
             }
           });

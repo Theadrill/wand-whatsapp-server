@@ -1,9 +1,11 @@
-# pyrefly: ignore [missing-import]
 import customtkinter as ctk
 from config_manager import CONFIG
+from PIL import Image
+import io
+import base64
 
 class ToastNotification(ctk.CTkToplevel):
-    def __init__(self, master, sender, message):
+    def __init__(self, master, sender, message, sticker_base64=None):
         super().__init__(master)
         self.title("W.A.N.D. Notification")
         self.overrideredirect(True)
@@ -93,18 +95,34 @@ class ToastNotification(ctk.CTkToplevel):
         )
         self.btn_close.place(relx=0.88, rely=0.2)
 
-        # Mensagem
+        # Processamento da Figurinha
+        if (sticker_base64):
+            try:
+                image_data = base64.b64decode(sticker_base64)
+                img = Image.open(io.BytesIO(image_data))
+                # Redimensiona para caber melhor (usando mais largura se necessário)
+                img.thumbnail((200, 48))
+                self.ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=(img.width, img.height))
+                
+                self.lbl_preview = ctk.CTkLabel(self.bottom_bg, image=self.ctk_img, text="")
+                self.lbl_preview.place(relx=0.06, rely=0.10)
+            except Exception as e:
+                self.show_message(message, width)
+        else:
+            self.show_message(message, width)
+
+        self.force_on_top()
+
+    def show_message(self, message, width):
         self.lbl_message = ctk.CTkLabel(
             self.bottom_bg, 
             text=message, 
             wraplength=width-40, 
             justify="left", 
-            text_color="#E9EDEF", # Cor oficial de texto do WhatsApp para melhor leitura
+            text_color="#E9EDEF",
             font=ctk.CTkFont(family="Segoe UI Variable Text", size=13)
         )
         self.lbl_message.place(relx=0.06, rely=0.10)
-
-        self.force_on_top()
 
     def force_on_top(self):
         if self.winfo_exists():

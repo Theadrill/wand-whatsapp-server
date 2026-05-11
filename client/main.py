@@ -46,9 +46,10 @@ class WANDClient:
                 data = msg_data.get("data", {})
                 sender = data.get("from", "Desconhecido")
                 text = data.get("text", "")
+                sticker = data.get("sticker")
                 if self.current_toast and self.current_toast.winfo_exists():
                     self.current_toast.destroy()
-                self.current_toast = ToastNotification(self.root, sender, text)
+                self.current_toast = ToastNotification(self.root, sender, text, sticker)
         self.root.after(100, self.check_queue)
 
     def start_ws_thread(self):
