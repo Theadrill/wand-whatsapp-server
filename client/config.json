@@ -9,6 +9,6 @@
     ],
     "server_port": 4750,
     "reconnect_delay": 5,
-    "toast_width": 350,
-    "toast_height": 100
+    "toast_width": 375,
+    "toast_height": 150
 }

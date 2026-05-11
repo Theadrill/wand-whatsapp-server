@@ -7,6 +7,7 @@ import os
 import pystray
 from PIL import Image
 import sys
+import subprocess
 
 # Caminhos de arquivos
 BASE_DIR = os.path.dirname(__file__)
@@ -19,8 +20,8 @@ def load_config():
         "server_hosts": ["localhost"],
         "server_port": 4750,
         "reconnect_delay": 5,
-        "toast_width": 350,
-        "toast_height": 120
+        "toast_width": 375,
+        "toast_height": 150
     }
     try:
         if os.path.exists(CONFIG_PATH):
@@ -162,8 +163,9 @@ class WANDClient:
         self.is_running = False
         if self.tray_icon:
             self.tray_icon.stop()
-        # Reinicia o processo atual
-        os.execv(sys.executable, ['python'] + sys.argv)
+        # Reinicia o processo atual de forma robusta no Windows
+        subprocess.Popen([sys.executable] + sys.argv)
+        os._exit(0)
 
     def check_queue(self):
         while self.msg_queue:
