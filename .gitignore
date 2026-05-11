@@ -145,3 +145,13 @@ vite.config.ts.timestamp-*
 # W.A.N.D. Custom
 server/tmp/
 server/auth_info_baileys/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+env/
+.env
