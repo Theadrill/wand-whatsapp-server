@@ -1,0 +1,5 @@
+websockets
+customtkinter
+asyncio
+pystray
+Pillow

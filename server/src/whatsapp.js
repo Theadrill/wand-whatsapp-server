@@ -73,12 +73,20 @@ export async function connectToWhatsApp() {
         console.log('[WhatsApp] WAND Server está ONLINE!');
         broadcast({ type: 'status', data: 'connected' });
 
-        // Teste de Envio: Envia uma mensagem para si mesmo ao conectar
-        const selfJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-        await sock.sendMessage(selfJid, { 
-          text: 'WAND Server: Sistema Online! 🚀\n\nAguardando notificações...' 
-        });
-        console.log('[WhatsApp] Mensagem de teste enviada com sucesso.');
+        // Teste de Envio: Aguarda 10 segundos para garantir sincronização total
+        console.log('[WhatsApp] Aguardando 10s para estabilização antes do teste...');
+        setTimeout(async () => {
+          try {
+            if (isConnecting) return; // Segurança extra
+            const selfJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+            await sock.sendMessage(selfJid, { 
+              text: 'WAND Server: Sistema Online! 🚀\n\nAguardando notificações...' 
+            });
+            console.log('[WhatsApp] Mensagem de teste enviada com sucesso.');
+          } catch (err) {
+            console.error('[WhatsApp] Erro no teste de envio (pode ser ignorado se o sistema estiver operando):', err.message);
+          }
+        }, 10000);
       }
     });
 
@@ -88,7 +96,8 @@ export async function connectToWhatsApp() {
       if (m.type === 'notify') {
         for (const msg of m.messages) {
           // Ignora mensagens enviadas por mim mesmo e mensagens sem conteúdo
-          if (msg.key.fromMe) continue;
+          // if (msg.key.fromMe) continue;
+          if (msg.key.remoteJid === 'status@broadcast') continue;
 
           const text = msg.message?.conversation || 
                        msg.message?.extendedTextMessage?.text || 
@@ -103,7 +112,7 @@ export async function connectToWhatsApp() {
           console.log(`[WhatsApp] ${sender}: ${text}`);
 
           broadcast({
-            type: 'notification',
+            type: 'message',
             data: {
               from: sender,
               text: text,
