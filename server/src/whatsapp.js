@@ -95,9 +95,23 @@ export async function connectToWhatsApp() {
     sock.ev.on('messages.upsert', async (m) => {
       if (m.type === 'notify') {
         for (const msg of m.messages) {
-          // Ignora mensagens enviadas por mim mesmo e mensagens sem conteúdo
-          // if (msg.key.fromMe) continue;
-          if (msg.key.remoteJid === 'status@broadcast') continue;
+          // 1. Ignora mensagens enviadas por mim mesmo (evita eco)
+          if (msg.key.fromMe) continue;
+
+          // 2. Filtros de JID (Status e grupos problemáticos)
+          const BLACKLIST = [
+            '120363404701403742',
+            'status@broadcast'
+          ];
+          if (BLACKLIST.some(id => msg.key.remoteJid.includes(id))) continue;
+
+          // 3. Filtro de Tempo (Evita "ghost messages" do histórico de sincronização)
+          const now = Math.floor(Date.now() / 1000);
+          const msgTime = msg.messageTimestamp;
+          if (msgTime && (now - msgTime > 60)) {
+            console.log(`[WhatsApp] Ignorando mensagem antiga de sync: ${msg.key.remoteJid}`);
+            continue;
+          }
 
           let text = msg.message?.conversation || 
                      msg.message?.extendedTextMessage?.text || 

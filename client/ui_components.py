@@ -59,12 +59,12 @@ class ToastNotification(ctk.CTkToplevel):
         self.btn_close = ctk.CTkButton(
             self.header_frame, 
             text="✕", 
-            width=20, 
-            height=20, 
+            width=30, 
+            height=30, 
             fg_color="transparent", 
             hover_color="#128C7E", 
             text_color="#FFFFFF",
-            font=ctk.CTkFont(size=12),
+            font=ctk.CTkFont(size=16),
             command=self.destroy
         )
         self.btn_close.grid(row=0, column=1, sticky="e")
