@@ -20,7 +20,7 @@ def load_config():
         "server_port": 4750,
         "reconnect_delay": 5,
         "toast_width": 350,
-        "toast_height": 100
+        "toast_height": 120
     }
     try:
         if os.path.exists(CONFIG_PATH):
@@ -39,7 +39,11 @@ class ToastNotification(ctk.CTkToplevel):
         self.title("W.A.N.D. Notification")
         self.overrideredirect(True)
         self.attributes("-topmost", True)
-        self.configure(fg_color="#111b21")
+        
+        # Truque para cantos arredondados: janela transparente e frame interno arredondado
+        transparent_color = "#000001"
+        self.attributes("-transparentcolor", transparent_color)
+        self.configure(fg_color=transparent_color)
         
         width = CONFIG['toast_width']
         height = CONFIG['toast_height']
@@ -50,19 +54,74 @@ class ToastNotification(ctk.CTkToplevel):
         y = screen_height - height - 60
         self.geometry(f"{width}x{height}+{x}+{y}")
 
-        self.grid_columnconfigure(0, weight=1)
-        self.header_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.header_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(5, 0))
+        # Container Principal Arredondado
+        self.container = ctk.CTkFrame(
+            self, 
+            fg_color="#1EA952", 
+            corner_radius=15, 
+            border_width=1, 
+            border_color="#075E54"
+        )
+        self.container.pack(fill="both", expand=True, padx=2, pady=2)
+
+        self.container.grid_columnconfigure(0, weight=1)
+        
+        # Header
+        self.header_frame = ctk.CTkFrame(self.container, fg_color="transparent")
+        self.header_frame.grid(row=0, column=0, sticky="ew", padx=15, pady=(12, 0))
         self.header_frame.grid_columnconfigure(0, weight=1)
 
-        self.lbl_sender = ctk.CTkLabel(self.header_frame, text=sender, font=ctk.CTkFont(weight="bold", size=14), text_color="#ffcc00")
+        # Sombra do Nome
+        self.lbl_sender_shadow = ctk.CTkLabel(
+            self.header_frame, 
+            text=sender, 
+            font=ctk.CTkFont(family="Segoe UI", weight="bold", size=15), 
+            text_color="#075E54"
+        )
+        self.lbl_sender_shadow.grid(row=0, column=0, sticky="w", padx=(1, 0), pady=(1, 0))
+
+        self.lbl_sender = ctk.CTkLabel(
+            self.header_frame, 
+            text=sender, 
+            font=ctk.CTkFont(family="Segoe UI", weight="bold", size=15), 
+            text_color="#FFFFFF"
+        )
         self.lbl_sender.grid(row=0, column=0, sticky="w")
 
-        self.btn_close = ctk.CTkButton(self.header_frame, text="X", width=20, height=20, fg_color="transparent", hover_color="#ea0038", command=self.destroy)
+        self.btn_close = ctk.CTkButton(
+            self.header_frame, 
+            text="✕", 
+            width=20, 
+            height=20, 
+            fg_color="transparent", 
+            hover_color="#128C7E", 
+            text_color="#FFFFFF",
+            font=ctk.CTkFont(size=12),
+            command=self.destroy
+        )
         self.btn_close.grid(row=0, column=1, sticky="e")
 
-        self.lbl_message = ctk.CTkLabel(self, text=message, wraplength=width-20, justify="left", text_color="#e9edef")
-        self.lbl_message.grid(row=1, column=0, sticky="w", padx=10, pady=(0, 10))
+        # Sombra da Mensagem
+        self.lbl_message_shadow = ctk.CTkLabel(
+            self.container, 
+            text=message, 
+            wraplength=width-40, 
+            justify="left", 
+            text_color="#075E54",
+            font=ctk.CTkFont(family="Segoe UI", size=13)
+        )
+        self.lbl_message_shadow.grid(row=1, column=0, sticky="w", padx=(16, 0), pady=(6, 21))
+
+        # Mensagem Principal
+        self.lbl_message = ctk.CTkLabel(
+            self.container, 
+            text=message, 
+            wraplength=width-40, 
+            justify="left", 
+            text_color="#F0F2F5",
+            font=ctk.CTkFont(family="Segoe UI", size=13)
+        )
+        self.lbl_message.grid(row=1, column=0, sticky="w", padx=15, pady=(5, 20))
 
 class WANDClient:
     def __init__(self):
@@ -85,6 +144,7 @@ class WANDClient:
             menu = (
                 pystray.MenuItem("W.A.N.D. Client", lambda: None, enabled=False),
                 pystray.Menu.SEPARATOR,
+                pystray.MenuItem("Reiniciar", self.restart_app),
                 pystray.MenuItem("Sair", self.quit_app)
             )
             self.tray_icon = pystray.Icon("wand_client", image, "W.A.N.D. Client", menu)
@@ -97,6 +157,13 @@ class WANDClient:
         if self.tray_icon:
             self.tray_icon.stop()
         os._exit(0)
+
+    def restart_app(self):
+        self.is_running = False
+        if self.tray_icon:
+            self.tray_icon.stop()
+        # Reinicia o processo atual
+        os.execv(sys.executable, ['python'] + sys.argv)
 
     def check_queue(self):
         while self.msg_queue:

@@ -61,7 +61,8 @@ export async function setupTray() {
       const title = action.item.title;
 
       if (title.includes('Abrir Interface')) {
-        const url = 'http://localhost:3000';
+        const port = process.env.PORT || 4750;
+        const url = `http://localhost:${port}`;
         const command = os.platform() === 'win32' ? `start ${url}` : `open ${url}`;
         exec(command);
       } 

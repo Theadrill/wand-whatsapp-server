@@ -54,7 +54,7 @@ wand-whatsapp-server/
 2. **`src/index.js`**:
    - **O que deve fazer:** É o orquestrador. Importa e inicializa o módulo HTTP, o módulo WebSocket e o módulo do WhatsApp, conectando-os.
 3. **`src/http.js`**:
-   - **O que deve fazer:** Sobe um servidor HTTP vanilla (ex: porta 3000) para servir os arquivos estáticos da pasta `public`.
+   - **O que deve fazer:** Sobe um servidor HTTP vanilla (ex: porta 4750) para servir os arquivos estáticos da pasta `public`.
 4. **`src/websocket.js`**:
    - **O que deve fazer:** Sobe um servidor WebSocket (`ws`) anexado ao servidor HTTP. Exporta uma função de `broadcast(data)` para que outros módulos possam enviar JSON para os clientes conectados.
 5. **`src/whatsapp.js`**:
@@ -67,7 +67,7 @@ wand-whatsapp-server/
    - Deve conter: `websockets`, `customtkinter`, e `asyncio` (nativo).
 2. **`main.py`**:
    - **O que deve fazer:**
-     - Iniciar um loop `asyncio` que tenta conectar no `ws://<HOSTNAME>:3000` (variável configurável no topo do arquivo).
+     - Iniciar um loop `asyncio` que tenta conectar no `ws://<HOSTNAME>:4750` (variável configurável no topo do arquivo).
      - **Reconnect Heartbeat:** Se a conexão cair ou o hostname mudar de IP, o script deve tentar reconectar em loop infinito silenciosamente.
      - Ao receber um JSON do servidor WebSocket, invocar uma função do `CustomTkinter` para desenhar o "Toast" (Banner) retangular no canto inferior direito da tela.
      - **Regras do Toast na Fase 1:** Fundo escuro, mostra o Nome e o Texto da mensagem. Fica persistente na tela até o usuário clicar no "X" para fechar. Nenhuma outra interação por enquanto.
