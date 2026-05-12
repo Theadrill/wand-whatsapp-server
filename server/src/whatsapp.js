@@ -37,10 +37,25 @@ const logger = pino({ level: 'error' });
 const storePath = path.resolve(__dirname, '../baileys_store.json');
 let chats = new Map();
 
+// Propriedades seguras para persistência (evita salvar o conteúdo das mensagens)
+const SAFE_CHAT_PROPS = ['id', 'name', 'muteEndTime', 'unreadCount', 'lastMsgTimestamp'];
+
+function sanitizeChat(chat) {
+  const sanitized = {};
+  SAFE_CHAT_PROPS.forEach(prop => {
+    if (chat[prop] !== undefined) sanitized[prop] = chat[prop];
+  });
+  return sanitized;
+}
+
 try {
   if (fs.existsSync(storePath)) {
     const data = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
-    chats = new Map(Object.entries(data));
+    // Carrega e sanitiza cada chat para garantir que mensagens antigas não fiquem na memória
+    Object.entries(data).forEach(([id, chat]) => {
+      chats.set(id, sanitizeChat(chat));
+    });
+    console.log('[WhatsApp] Store local carregado e sanitizado.');
   }
 } catch (e) {
   console.error('[WhatsApp] Erro ao ler store local:', e.message);
@@ -135,21 +150,21 @@ export async function connectToWhatsApp() {
       }
     });
 
-    // Rastreador de Chats para verificar status de Mute
+    // Rastreador de Chats para verificar status de Mute (com sanitização para privacidade)
     sock.ev.on('messaging-history.set', (history) => {
       if (history.chats) {
-        history.chats.forEach(chat => chats.set(chat.id, chat));
+        history.chats.forEach(chat => chats.set(chat.id, sanitizeChat(chat)));
       }
     });
 
     sock.ev.on('chats.upsert', (newChats) => {
-      newChats.forEach(chat => chats.set(chat.id, chat));
+      newChats.forEach(chat => chats.set(chat.id, sanitizeChat(chat)));
     });
 
     sock.ev.on('chats.update', (updates) => {
       updates.forEach(update => {
         const chat = chats.get(update.id) || {};
-        chats.set(update.id, { ...chat, ...update });
+        chats.set(update.id, sanitizeChat({ ...chat, ...update }));
       });
     });
 
