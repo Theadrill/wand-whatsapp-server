@@ -30,5 +30,8 @@
   "devDependencies": {
     "eslint": "^8.57.0",
     "pino-pretty": "^10.3.1"
+  },
+  "overrides": {
+    "protobufjs": "^7.5.5"
   }
 }
