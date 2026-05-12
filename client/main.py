@@ -22,7 +22,11 @@ class WANDClient:
         
         # Inicializa Gerentes
         self.tray = TrayManager(on_restart=self.restart_app, on_quit=self.quit_app)
-        self.network = NetworkClient(self.msg_queue, lambda: self.is_running)
+        self.network = NetworkClient(
+            self.msg_queue, 
+            lambda: self.is_running,
+            status_callback=lambda s: self.tray.update_status(s)
+        )
         
         self.tray.setup_tray()
         self.check_queue()

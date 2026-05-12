@@ -11,16 +11,31 @@ class TrayManager:
     def setup_tray(self):
         try:
             image = Image.open(ICON_PATH)
-            menu = (
-                pystray.MenuItem("W.A.N.D. Client", lambda: None, enabled=False),
-                pystray.Menu.SEPARATOR,
-                pystray.MenuItem("Reiniciar", self.on_restart),
-                pystray.MenuItem("Sair", self.on_quit)
-            )
-            self.tray_icon = pystray.Icon("wand_client", image, "W.A.N.D. Client", menu)
+            self.tray_icon = pystray.Icon("wand_client", image, "W.A.N.D. Client (Iniciando...)", self._get_menu("Iniciando..."))
             self.tray_icon.run_detached()
         except Exception as e:
             print(f"[Tray] Erro ao carregar bandeja: {e}")
+
+    def _get_menu(self, status):
+        return pystray.Menu(
+            pystray.MenuItem(f"Status: {status}", lambda: None, enabled=False),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("Reiniciar", self.on_restart),
+            pystray.MenuItem("Sair", self.on_quit)
+        )
+
+    def update_status(self, status):
+        if self.tray_icon:
+            # Mapeamento de status para nomes amigáveis
+            labels = {
+                "connecting": "Conectando ao Server...",
+                "connected": "Conectado",
+                "failed": "Erro de Conexão",
+                "reconnecting": "Tentando reconectar..."
+            }
+            label = labels.get(status, status)
+            self.tray_icon.title = f"W.A.N.D. Client ({label})"
+            self.tray_icon.menu = self._get_menu(label)
 
     def stop(self):
         if self.tray_icon:

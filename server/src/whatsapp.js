@@ -119,13 +119,15 @@ export async function connectToWhatsApp() {
         
         console.log(`[WhatsApp] Conexão fechada. Status: ${statusCode}`);
 
+        updateTrayStatus(false);
+        broadcast({ type: 'status', data: 'disconnected' });
+
         // Se não foi um logout manual, tenta reconectar
         if (statusCode !== DisconnectReason.loggedOut) {
-          updateTrayStatus(false);
           console.log('[WhatsApp] Tentando reconectar em 5 segundos...');
           setTimeout(() => connectToWhatsApp(), 5000);
         } else {
-          console.error('[WhatsApp] Sessão encerrada (Logged Out). Delete a pasta auth_info_baileys e escaneie novamente.');
+          console.error('[WhatsApp] Sessão encerrada (Logged Out). Clique em "Re-autenticar" na bandeja para escanear novamente.');
         }
       } else if (connection === 'open') {
         isConnecting = false;
@@ -279,10 +281,14 @@ export async function resetSession() {
   
   if (sock) {
     try {
-      sock.logout();
+      // Se a conexão já estiver fechada (como no erro 401), o logout vai falhar.
+      // Tentamos o logout graciosamente, mas ignoramos erros se já estiver desconectado.
+      if (sock.ws?.readyState === 1) { // 1 = OPEN
+        await sock.logout().catch(() => {});
+      }
       sock.end();
     } catch (e) {
-      console.log('[WhatsApp] Aviso ao fechar socket:', e.message);
+      console.log('[WhatsApp] Aviso ao encerrar socket:', e.message);
     }
   }
 
