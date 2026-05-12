@@ -18,7 +18,7 @@ const __dirname = path.dirname(__filename);
 
 // Carregamento de configuração
 const configPath = path.resolve(__dirname, '../config.json');
-let config = { allow_self_messages: false };
+let config = { allow_self_messages: false, allow_groups_messages: false, filter_muted_chats: true };
 
 try {
   if (fs.existsSync(configPath)) {
@@ -32,6 +32,29 @@ try {
 
 // Logger configurado para erro para evitar poluição, conforme o projeto de referência
 const logger = pino({ level: 'error' });
+
+// Criação de um Store local simples para metadados (já que o makeInMemoryStore não está disponível nesta versão)
+const storePath = path.resolve(__dirname, '../baileys_store.json');
+let chats = new Map();
+
+try {
+  if (fs.existsSync(storePath)) {
+    const data = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
+    chats = new Map(Object.entries(data));
+  }
+} catch (e) {
+  console.error('[WhatsApp] Erro ao ler store local:', e.message);
+}
+
+// Salvar a cada 10s se houver alterações
+setInterval(() => {
+  try {
+    const data = Object.fromEntries(chats);
+    fs.writeFileSync(storePath, JSON.stringify(data));
+  } catch (e) {
+    console.error('[WhatsApp] Erro ao salvar store local:', e.message);
+  }
+}, 10_000);
 
 // Trava de conexão para evitar múltiplas instâncias
 let isConnecting = false;
@@ -112,6 +135,24 @@ export async function connectToWhatsApp() {
       }
     });
 
+    // Rastreador de Chats para verificar status de Mute
+    sock.ev.on('messaging-history.set', (history) => {
+      if (history.chats) {
+        history.chats.forEach(chat => chats.set(chat.id, chat));
+      }
+    });
+
+    sock.ev.on('chats.upsert', (newChats) => {
+      newChats.forEach(chat => chats.set(chat.id, chat));
+    });
+
+    sock.ev.on('chats.update', (updates) => {
+      updates.forEach(update => {
+        const chat = chats.get(update.id) || {};
+        chats.set(update.id, { ...chat, ...update });
+      });
+    });
+
     // ... (restante do código de mensagens)
 
     sock.ev.on('messages.upsert', async (m) => {
@@ -120,6 +161,26 @@ export async function connectToWhatsApp() {
         for (const msg of m.messages) {
           const isMe = msg.key.fromMe;
           
+          // 0. Filtro de Chats Silenciados (MÁXIMA PRIORIDADE - Executa antes de tudo)
+          if (config.filter_muted_chats) {
+            const chat = chats.get(msg.key.remoteJid);
+            if (chat && chat.muteEndTime !== undefined) {
+              const mute = chat.muteEndTime;
+              let isMuted = false;
+              if (mute === -1) {
+                isMuted = true;
+              } else if (typeof mute === 'number') {
+                const muteMs = mute < 100000000000 ? mute * 1000 : mute;
+                isMuted = muteMs > Date.now();
+              }
+              
+              if (isMuted) {
+                console.log(`[WhatsApp] Ignorando mensagem de chat silenciado: ${msg.key.remoteJid}`);
+                continue;
+              }
+            }
+          }
+
           // Log para debug
           if (isMe) {
             console.log(`[WhatsApp] Mensagem própria detectada. allow_self: ${config.allow_self_messages}`);
@@ -128,7 +189,14 @@ export async function connectToWhatsApp() {
           // 1. Filtro de mensagens próprias (opcional via config)
           if (isMe && !config.allow_self_messages) continue;
 
-          // 2. Filtros de JID (Status, Grupos bloqueados e Canais/Newsletters)
+          // 2. Filtro de mensagens de grupos (opcional via config)
+          const isGroup = msg.key.remoteJid.endsWith('@g.us');
+          if (isGroup && !config.allow_groups_messages) {
+            console.log(`[WhatsApp] Ignorando mensagem de grupo: ${msg.key.remoteJid}`);
+            continue;
+          }
+
+          // 3. Filtros de JID (Status, Grupos bloqueados e Canais/Newsletters)
           const BLACKLIST = [
             '120363404701403742',
             'status@broadcast',
@@ -136,7 +204,7 @@ export async function connectToWhatsApp() {
           ];
           if (BLACKLIST.some(id => msg.key.remoteJid.includes(id))) continue;
 
-          // 3. Filtro de Tempo (Evita "ghost messages" do histórico de sincronização)
+          // 4. Filtro de Tempo (Evita "ghost messages" do histórico de sincronização)
           const now = Math.floor(Date.now() / 1000);
           const msgTime = msg.messageTimestamp;
           if (msgTime && (now - msgTime > 60)) {

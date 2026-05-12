@@ -1,3 +1,5 @@
 {
-  "allow_self_messages": true
+  "allow_self_messages": true,
+  "allow_groups_messages": true,
+  "filter_muted_chats": true
 }
