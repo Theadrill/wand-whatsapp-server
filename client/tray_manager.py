@@ -3,10 +3,11 @@ from PIL import Image
 from config_manager import ICON_PATH
 
 class TrayManager:
-    def __init__(self, on_restart, on_quit):
+    def __init__(self, on_restart, on_quit, on_show_history):
         self.tray_icon = None
         self.on_restart = on_restart
         self.on_quit = on_quit
+        self.on_show_history = on_show_history
 
     def setup_tray(self):
         try:
@@ -19,6 +20,7 @@ class TrayManager:
     def _get_menu(self, status):
         return pystray.Menu(
             pystray.MenuItem(f"Status: {status}", lambda: None, enabled=False),
+            pystray.MenuItem("Ver Histórico", self.on_show_history, default=True),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Reiniciar", self.on_restart),
             pystray.MenuItem("Sair", self.on_quit)

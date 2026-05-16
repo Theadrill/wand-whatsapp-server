@@ -19,12 +19,14 @@ class ToastNotification(ctk.CTkToplevel):
         self.configure(fg_color=transparent_color)
         self.config(bg=transparent_color)
         
+        # --- CONFIGURAÇÃO DE TAMANHO E POSIÇÃO NA TELA ---
         width = CONFIG['toast_width']
         height = CONFIG['toast_height']
         
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
-        x = screen_width - width - 20
+        # Posiciona no canto inferior direito com margens de 20px e 60px
+        x = screen_width - width - 20 
         y = screen_height - height - 60
         self.geometry(f"{width}x{height}+{x}+{y}")
 
@@ -82,6 +84,7 @@ class ToastNotification(ctk.CTkToplevel):
         )
         self.lbl_sender.place(relx=0.05, rely=0.25)
 
+        # --- BOTÃO FECHAR DO TOAST ---
         self.btn_close = ctk.CTkButton(
             self.top_bg, 
             text="✕", 
@@ -93,6 +96,7 @@ class ToastNotification(ctk.CTkToplevel):
             font=ctk.CTkFont(size=16),
             command=self.destroy
         )
+        # Posição do botão fechar (relx=0.88 é a direita)
         self.btn_close.place(relx=0.88, rely=0.2)
 
         # Processamento da Figurinha
@@ -111,7 +115,30 @@ class ToastNotification(ctk.CTkToplevel):
         else:
             self.show_message(message, width)
 
+        # Permite abrir o histórico ao clicar em qualquer lugar que não seja o botão fechar
+        self.click_callback = None
+        self.bind_click_events(self.container)
+        self.bind_click_events(self.top_bg)
+        self.bind_click_events(self.bottom_bg)
+        self.bind_click_events(self.lbl_sender)
+
         self.force_on_top()
+
+    def bind_click_events(self, widget):
+        widget.bind("<Button-1>", lambda e: self.on_toast_click())
+
+    def on_toast_click(self):
+        if self.click_callback:
+            self.click_callback()
+        self.destroy()
+
+    def set_click_callback(self, callback):
+        self.click_callback = callback
+        # Re-bind labels que podem ser criados depois
+        if hasattr(self, 'lbl_message'):
+            self.bind_click_events(self.lbl_message)
+        if hasattr(self, 'lbl_preview'):
+            self.bind_click_events(self.lbl_preview)
 
     def show_message(self, message, width):
         self.lbl_message = ctk.CTkLabel(
@@ -129,3 +156,226 @@ class ToastNotification(ctk.CTkToplevel):
             self.attributes("-topmost", True)
             self.lift()
             self.after(2000, self.force_on_top)
+
+class HistoryWindow(ctk.CTkToplevel):
+    def __init__(self, master, history_data=[]):
+        super().__init__(master)
+        
+        # Configurações da Janela
+        self.title("W.A.N.D. - Histórico")
+        # --- CONFIGURAÇÃO DE TAMANHO DA JANELA ---
+        window_width = 450
+        window_height = 450
+        
+        # Centralização automática
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        x = (screen_width // 2) - (window_width // 2)
+        y = (screen_height // 2) - (window_height // 2)
+        
+        self.geometry(f"{window_width}x{window_height}+{x}+{y}")
+        self.overrideredirect(True)
+        
+        # Transparência para o radius (Estratégia validada no mockup)
+        self.bg_color = "#F5F5F7"
+        trans_color = "#000001"
+        self.wm_attributes("-transparentcolor", trans_color)
+        self.configure(fg_color=trans_color)
+        self.config(bg=trans_color)
+
+        # Container Principal
+        self.main_container = ctk.CTkFrame(
+            self, 
+            fg_color=self.bg_color, 
+            corner_radius=25,
+            border_width=0
+        )
+        self.main_container.place(relx=0.5, rely=0.5, relwidth=0.90, relheight=0.90, anchor="center")
+
+        # Barra de Título
+        self.title_bar = ctk.CTkFrame(self.main_container, fg_color="transparent", height=40)
+        self.title_bar.pack(fill="x", side="top", pady=(10, 0), padx=20)
+        
+        self.title_label = ctk.CTkLabel(
+            self.title_bar, text="Histórico de Notificações",
+            font=ctk.CTkFont(family="Segoe UI Variable Display", size=14, weight="bold"),
+            text_color="#1D1D1F"
+        )
+        self.title_label.place(relx=0.5, rely=0.5, anchor="center")
+
+        # --- BOTÕES DE CONTROLE ESTILO MAC (DIREITA) ---
+        self.btn_container = ctk.CTkFrame(self.title_bar, fg_color="transparent")
+        self.btn_container.pack(side="right", padx=0)
+
+        # Botão Fechar (Vermelho)
+        self.btn_close = ctk.CTkButton(
+            self.btn_container, text="", width=12, height=12, corner_radius=6,
+            fg_color="#FF5F57", hover_color="#E0443E", command=self.withdraw
+        )
+        self.btn_close.pack(side="right", padx=2)
+
+        # Botão Maximizar (Verde)
+        self.btn_max = ctk.CTkButton(
+            self.btn_container, text="", width=12, height=12, corner_radius=6,
+            fg_color="#28C840", hover_color="#1AAB2F", command=self.toggle_maximize
+        )
+        self.btn_max.pack(side="right", padx=2)
+
+        # Botão Minimizar (Amarelo)
+        self.btn_min = ctk.CTkButton(
+            self.btn_container, text="", width=12, height=12, corner_radius=6,
+            fg_color="#FEBC2E", hover_color="#D9A322", command=self.minimize
+        )
+        self.btn_min.pack(side="right", padx=2)
+
+        self.is_maximized = False
+
+        # --- BARRA DE RODAPÉ (Estilo Barra de Título) ---
+        self.bottom_bar = ctk.CTkFrame(self.main_container, fg_color="transparent", height=25)
+        self.bottom_bar.pack(fill="x", side="bottom", pady=(0, 5), padx=20)
+
+        self.lbl_footer = ctk.CTkLabel(
+            self.bottom_bar,
+            text="W.A.N.D. - WhatsApp Notification Devices",
+            font=ctk.CTkFont(family="Segoe UI Variable Text", size=10, weight="bold"),
+            text_color="#8E8E93"
+        )
+        self.lbl_footer.place(relx=0.5, rely=0.5, anchor="center")
+
+        # Área de Scroll
+        self.scrollable_frame = ctk.CTkScrollableFrame(
+            self.main_container, fg_color="transparent", corner_radius=0
+        )
+        self.scrollable_frame.pack(fill="both", expand=True, padx=10, pady=(10, 0))
+
+        self.update_history(history_data)
+
+        # Movimentação
+        self.title_bar.bind("<ButtonPress-1>", self.start_move)
+        self.title_bar.bind("<B1-Motion>", self.do_move)
+        self.title_label.bind("<ButtonPress-1>", self.start_move)
+        self.title_label.bind("<B1-Motion>", self.do_move)
+
+    def update_history(self, data):
+        self.current_data = data # Guarda os dados atuais para redimensionamento
+        # Limpa widgets antigos
+        for widget in self.scrollable_frame.winfo_children():
+            widget.destroy()
+            
+        if not data:
+            lbl_empty = ctk.CTkLabel(
+                self.scrollable_frame, text="Nenhuma mensagem recente.",
+                font=ctk.CTkFont(size=13), text_color="#8E8E93"
+            )
+            lbl_empty.pack(pady=20)
+            return
+
+        for msg in data:
+            self.create_message_card(msg)
+            
+        # Ajusta a visibilidade do scroll após inserir os itens
+        self.after(10, self._adjust_scrollbar_visibility)
+
+    def _adjust_scrollbar_visibility(self):
+        """Esconde ou mostra a barra de scroll dependendo do tamanho do conteúdo"""
+        try:
+            self.update_idletasks()
+            # Bbox "all" retorna (x1, y1, x2, y2) de todo o conteúdo do canvas interno
+            bbox = self.scrollable_frame._parent_canvas.bbox("all")
+            if not bbox: return
+            
+            content_height = bbox[3]
+            frame_height = self.scrollable_frame._parent_canvas.winfo_height()
+
+            if content_height <= frame_height:
+                # Esconde a barra de scroll interna do CTkScrollableFrame
+                self.scrollable_frame._scrollbar.grid_forget()
+            else:
+                # Mostra a barra (recolocando-a no grid original do componente)
+                self.scrollable_frame._scrollbar.grid(row=0, column=1, sticky="ns")
+        except:
+            pass
+
+    def create_message_card(self, msg):
+        card = ctk.CTkFrame(
+            self.scrollable_frame, fg_color="#FFFFFF",
+            corner_radius=12, border_width=1, border_color="#E5E5EA"
+        )
+        card.pack(fill="x", pady=5, padx=5)
+
+        lbl_from = ctk.CTkLabel(
+            card, text=msg.get("senderName", "Desconhecido"),
+            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+            text_color="#000000"
+        )
+        lbl_from.pack(anchor="w", padx=15, pady=(10, 0))
+
+        lbl_text = ctk.CTkLabel(
+            card, text=msg.get("text", ""),
+            font=ctk.CTkFont(family="Segoe UI Variable Text", size=13),
+            text_color="#3A3A3C", 
+            justify="left"
+        )
+        # Quebra de linha dinâmica baseada na largura da janela
+        lbl_text.configure(wraplength=self.winfo_width() - 80)
+        lbl_text.pack(anchor="w", padx=15, pady=(5, 10))
+
+        # Formatação simples da data (se disponível)
+        ts = msg.get("timestamp", 0)
+        import datetime
+        time_str = datetime.datetime.fromtimestamp(ts/1000).strftime("%H:%M") if ts else "--:--"
+        
+        lbl_time = ctk.CTkLabel(
+            card, text=time_str, font=ctk.CTkFont(size=10), text_color="#8E8E93"
+        )
+        lbl_time.place(relx=1.0, rely=1.0, x=-10, y=-5, anchor="se")
+
+    def start_move(self, event):
+        self.x = event.x
+        self.y = event.y
+
+    def do_move(self, event):
+        if self.is_maximized: return # Impede mover se estiver maximizado
+        deltax = event.x - self.x
+        deltay = event.y - self.y
+        x = self.winfo_x() + deltax
+        y = self.winfo_y() + deltay
+        self.geometry(f"+{x}+{y}")
+
+    def toggle_maximize(self):
+        if not self.is_maximized:
+            # Salva posição original para restaurar depois
+            self.old_geometry = self.geometry()
+            # Pega tamanho da tela
+            sw = self.winfo_screenwidth()
+            sh = self.winfo_screenheight()
+            # Maximiza ocupando toda a tela (100%) e remove arredondado
+            self.geometry(f"{sw}x{sh-40}+0+0")
+            self.main_container.configure(corner_radius=0)
+            self.main_container.place(relwidth=1.0, relheight=1.0)
+            self.is_maximized = True
+            # Força atualização dos cards para o novo wraplength
+            self.after(100, lambda: self.update_history(self.current_data))
+            self.after(150, self._adjust_scrollbar_visibility)
+        else:
+            # Restaura tamanho original e arredondamento
+            self.geometry(self.old_geometry)
+            self.main_container.configure(corner_radius=25)
+            self.main_container.place(relwidth=0.90, relheight=0.90)
+            self.is_maximized = False
+            # Força atualização dos cards para o novo wraplength
+            self.after(100, lambda: self.update_history(self.current_data))
+            self.after(150, self._adjust_scrollbar_visibility)
+
+    def minimize(self):
+        """Minimiza a janela contornando a limitação do overrideredirect"""
+        self.overrideredirect(False)
+        self.iconify()
+        # Monitora o estado para reativar o overrideredirect ao voltar
+        self.bind("<FocusIn>", self.on_restore)
+
+    def on_restore(self, event):
+        """Reativa o visual sem bordas ao restaurar a janela"""
+        if self.state() == "normal":
+            self.overrideredirect(True)
+            self.unbind("<FocusIn>")

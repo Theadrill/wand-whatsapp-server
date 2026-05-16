@@ -27,6 +27,7 @@ class NetworkClient:
                 self._update_status("connecting")
                 
                 async with websockets.connect(ws_url) as websocket:
+                    self.websocket = websocket # Armazena para envio de mensagens
                     print(f"[WS] Conectado com sucesso em {ws_url}")
                     self._update_status("connected")
                     
@@ -35,6 +36,7 @@ class NetworkClient:
                         data = json.loads(message)
                         self.msg_queue.append(data)
             except Exception as e:
+                self.websocket = None
                 if self.is_running_callback():
                     self._update_status("failed")
                     # Rotaciona para o próximo host se falhar
@@ -43,3 +45,11 @@ class NetworkClient:
                     print(f"[WS] Falha em {host}. Próximo: {next_host} em {CONFIG['reconnect_delay']}s...")
                     self._update_status("reconnecting")
                     await asyncio.sleep(CONFIG['reconnect_delay'])
+
+    async def send_command(self, cmd_type, payload={}):
+        if hasattr(self, 'websocket') and self.websocket:
+            try:
+                msg = json.dumps({"type": cmd_type, **payload})
+                await self.websocket.send(msg)
+            except Exception as e:
+                print(f"[WS] Erro ao enviar comando {cmd_type}: {e}")
