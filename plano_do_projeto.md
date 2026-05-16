@@ -87,7 +87,7 @@ wand-whatsapp-server/
 ## 👤 FASE 3: PADRONIZAÇÃO E RESOLUÇÃO DE CONTATOS (Nova Fase)
 **Objetivo:** Implementar padronização de contatos, resolução automática de nomes amigáveis usando metadados e persistência de contatos para evitar JIDs numéricos e IDs mascarados (`@lid`).
 
-*   **3.1. Esteira de Resolução de Nomes (Fallback Chain):** Criar lógica no servidor Node.js que resolva o nome do remetente com a seguinte prioridade antes de enviar a mensagem ao cliente Python:
+*   **[X] 3.1. Esteira de Resolução de Nomes (Fallback Chain):** Criar lógica no servidor Node.js que resolva o nome do remetente com a seguinte prioridade antes de enviar a mensagem ao cliente Python:
     1. **Mensagem própria (`fromMe: true`):** Sempre identificar como **"Você"**.
     2. **Agenda Local (`store.contacts`):** Buscar o nome cadastrado na lista de contatos do usuário sincronizada pelo Baileys.
     3. **Nome de Perfil (`pushName`):** Utilizar o nome configurado pelo próprio remetente no WhatsApp.

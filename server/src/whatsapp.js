@@ -36,7 +36,9 @@ const logger = pino({ level: 'error' });
 
 // Criação de um Store local simples para metadados (já que o makeInMemoryStore não está disponível nesta versão)
 const storePath = path.resolve(__dirname, '../baileys_store.json');
+const contactsPath = path.resolve(__dirname, '../baileys_contacts.json');
 let chats = new Map();
+let contacts = new Map();
 
 // Propriedades seguras para persistência (evita salvar o conteúdo das mensagens)
 const SAFE_CHAT_PROPS = ['id', 'name', 'muteEndTime', 'unreadCount', 'lastMsgTimestamp'];
@@ -117,15 +119,78 @@ try {
   console.error('[WhatsApp] Erro ao ler store local:', e.message);
 }
 
+try {
+  if (fs.existsSync(contactsPath)) {
+    const data = JSON.parse(fs.readFileSync(contactsPath, 'utf-8'));
+    Object.entries(data).forEach(([id, contact]) => {
+      contacts.set(id, contact);
+    });
+    console.log('[WhatsApp] Contatos locais carregados.');
+  }
+} catch (e) {
+  console.error('[WhatsApp] Erro ao ler contatos locais:', e.message);
+}
+
 // Salvar a cada 10s se houver alterações
 setInterval(() => {
   try {
-    const data = Object.fromEntries(chats);
-    fs.writeFileSync(storePath, JSON.stringify(data));
+    const dataChats = Object.fromEntries(chats);
+    fs.writeFileSync(storePath, JSON.stringify(dataChats));
+
+    const dataContacts = Object.fromEntries(contacts);
+    fs.writeFileSync(contactsPath, JSON.stringify(dataContacts));
   } catch (e) {
-    console.error('[WhatsApp] Erro ao salvar store local:', e.message);
+    console.error('[WhatsApp] Erro ao salvar stores locais:', e.message);
   }
 }, 10_000);
+
+/**
+ * Formata um JID numérico em máscara elegante: +55 (XX) XXXXX-XXXX
+ */
+function formatPhoneNumber(jid) {
+  if (!jid) return '';
+  const num = jid.split('@')[0];
+  if (num.startsWith('55') && (num.length === 12 || num.length === 13)) {
+    const ddd = num.substring(2, 4);
+    const rest = num.substring(4);
+    if (rest.length === 9) {
+      return `+55 (${ddd}) ${rest.substring(0, 5)}-${rest.substring(5)}`;
+    } else if (rest.length === 8) {
+      return `+55 (${ddd}) ${rest.substring(0, 4)}-${rest.substring(4)}`;
+    }
+  }
+  return `+${num}`;
+}
+
+/**
+ * Resolve o nome do remetente com base na Esteira de Resolução (Fase 3.1)
+ */
+function resolveSenderName(msg) {
+  const isMe = msg.key.fromMe;
+  if (isMe) {
+    return 'Você';
+  }
+
+  const senderJid = msg.key.participant || msg.participant || msg.key.remoteJid;
+  if (!senderJid) {
+    return 'Desconhecido';
+  }
+
+  // 1. Agenda Local (store.contacts/contacts Map)
+  const contact = contacts.get(senderJid);
+  if (contact) {
+    const name = contact.name || contact.verifiedName || contact.displayName;
+    if (name) return name;
+  }
+
+  // 2. Nome de Perfil (pushName)
+  if (msg.pushName) {
+    return msg.pushName;
+  }
+
+  // 3. Máscara Telefônica
+  return formatPhoneNumber(senderJid);
+}
 
 // Trava de conexão para evitar múltiplas instâncias
 let isConnecting = false;
@@ -210,6 +275,11 @@ export async function connectToWhatsApp() {
 
     // Rastreador de Chats para verificar status de Mute (com sanitização para privacidade)
     sock.ev.on('messaging-history.set', async (history) => {
+      if (history.contacts) {
+        for (const contact of history.contacts) {
+          contacts.set(contact.id, contact);
+        }
+      }
       if (history.chats) {
         for (const chat of history.chats) {
           const oldChat = chats.get(chat.id) || {};
@@ -250,6 +320,19 @@ export async function connectToWhatsApp() {
           console.log(`[WhatsApp Sync] ATUALIZAÇÃO DE SILÊNCIO: Chat ${update.id} teve muteEndTime atualizado para: ${update.muteEndTime}. Silenciado no DB? ${isMuted}`);
           await setChatMutedStatus(update.id, isMuted);
         }
+      }
+    });
+
+    sock.ev.on('contacts.upsert', (newContacts) => {
+      for (const contact of newContacts) {
+        contacts.set(contact.id, contact);
+      }
+    });
+
+    sock.ev.on('contacts.update', (updates) => {
+      for (const update of updates) {
+        const contact = contacts.get(update.id) || {};
+        contacts.set(update.id, { ...contact, ...update });
       }
     });
 
@@ -321,7 +404,7 @@ export async function connectToWhatsApp() {
 
           if (!text) continue;
 
-          const sender = msg.pushName || msg.key.remoteJid.split('@')[0];
+          const sender = resolveSenderName(msg);
 
           console.log(`[WhatsApp] ${sender}: ${text} ${stickerBase64 ? '(com preview)' : ''}`);
 
