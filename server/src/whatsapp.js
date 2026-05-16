@@ -9,6 +9,7 @@ import pino from 'pino';
 import { broadcast } from './websocket.js';
 import { updateTrayStatus } from './tray.js';
 import { processSticker } from './mediaHandler.js';
+import { saveMessage } from './database.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -252,6 +253,15 @@ export async function connectToWhatsApp() {
           const sender = msg.pushName || msg.key.remoteJid.split('@')[0];
           
           console.log(`[WhatsApp] ${sender}: ${text} ${stickerBase64 ? '(com preview)' : ''}`);
+
+          // Salva no Banco de Dados (Persistência)
+          await saveMessage({
+            remoteJid: msg.key.remoteJid,
+            senderName: sender,
+            text: text,
+            timestamp: Date.now(),
+            fromMe: isMe
+          });
 
           broadcast({
             type: 'message',

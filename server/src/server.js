@@ -2,6 +2,7 @@ import { createServer } from './http.js';
 import { setupWebSocket } from './websocket.js';
 import { connectToWhatsApp } from './whatsapp.js';
 import { setupTray } from './tray.js';
+import { initDatabase } from './database.js';
 
 /**
  * Ponto de entrada principal do W.A.N.D. Server
@@ -11,6 +12,9 @@ async function bootstrap() {
   console.log('--- W.A.N.D. Server ---');
   
   try {
+    // 0. Inicializa o Banco de Dados
+    await initDatabase();
+
     // 1. Inicializa o Servidor HTTP
     const { server, start } = createServer();
     

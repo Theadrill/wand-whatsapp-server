@@ -77,7 +77,7 @@ export async function setupTray() {
       } 
       else if (title.includes('Re-autenticar')) {
         // Comando PowerShell para exibir diálogo Yes/No nativo
-        const psCommand = `powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('Deseja realmente desconectar e gerar um novo QR Code?', 'W.A.N.D. - Confirmacao', 'YesNo', 'Warning')"`;
+        const psCommand = 'powershell -Command "Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(\'Deseja realmente desconectar e gerar um novo QR Code?\', \'W.A.N.D. - Confirmacao\', \'YesNo\', \'Warning\')"';
         
         exec(psCommand, async (error, stdout) => {
           if (stdout.trim() === 'Yes') {

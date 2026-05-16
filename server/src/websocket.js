@@ -1,4 +1,5 @@
 import { WebSocketServer } from 'ws';
+import { getHistory } from './database.js';
 
 let wss;
 const clients = new Set();
@@ -26,6 +27,20 @@ export function setupWebSocket(server) {
     } else if (lastQRCode) {
       ws.send(JSON.stringify({ type: 'qrcode', data: lastQRCode }));
     }
+
+    ws.on('message', async (message) => {
+      try {
+        const payload = JSON.parse(message);
+        
+        if (payload.type === 'get_history') {
+          const limit = payload.limit || 50;
+          const history = await getHistory(limit);
+          ws.send(JSON.stringify({ type: 'history', data: history }));
+        }
+      } catch (error) {
+        console.error('[WebSocket] Erro ao processar mensagem do cliente:', error.message);
+      }
+    });
 
     ws.on('close', () => {
       clients.delete(ws);
