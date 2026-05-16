@@ -84,14 +84,27 @@ wand-whatsapp-server/
 
 ---
 
-## 🌟 FASE 3: A APLICAÇÃO COMPLETA (Implementar apenas após aprovação da Fase 2)
-**Objetivo:** UI completa, motor de privacidade e filtros avançados.
+## 👤 FASE 3: PADRONIZAÇÃO E RESOLUÇÃO DE CONTATOS (Nova Fase)
+**Objetivo:** Implementar padronização de contatos, resolução automática de nomes amigáveis usando metadados e persistência de contatos para evitar JIDs numéricos e IDs mascarados (`@lid`).
 
-*   **3.1. UI Master-Detail (`main.py`):** Mudar de apenas um Toast para uma Janela Principal em CustomTkinter contendo a Sidebar (contatos) à esquerda e o Dashboard/Chat à direita.
-*   **3.2. Auto-Privacy (Toast do Cliente):** Atualizar o Toast para borrar o texto após X segundos e empilhar badges vermelhos de contagem. Clicar no Toast abre o Chat correspondente.
-*   **3.3. Web UI e Configurações (`src/config.js`):** Criar os botões na UI do Python ou na interface Web do servidor para gerenciar Whitelist/Blacklist (Contatos, Grupos e Canais), Modo Não Perturbe e Tempo de Censura. O Node deve aplicar os filtros (descartando mensagens da blacklist na raiz).
-*   **3.4. Pipeline de Mídia (Baileys + Python):** Implementar os 3 estágios de economia de dados: (1) Preview Thumbnail -> (2) Download em RAM sob demanda -> (3) Gravar em Disco.
+*   **3.1. Esteira de Resolução de Nomes (Fallback Chain):** Criar lógica no servidor Node.js que resolva o nome do remetente com a seguinte prioridade antes de enviar a mensagem ao cliente Python:
+    1. **Mensagem própria (`fromMe: true`):** Sempre identificar como **"Você"**.
+    2. **Agenda Local (`store.contacts`):** Buscar o nome cadastrado na lista de contatos do usuário sincronizada pelo Baileys.
+    3. **Nome de Perfil (`pushName`):** Utilizar o nome configurado pelo próprio remetente no WhatsApp.
+    4. **Máscara Telefônica:** Formatar o número do telefone de forma elegante (ex: `+55 (11) 99999-9999`) caso nenhum nome seja encontrado.
+*   **3.2. Resolução de IDs Mascarados (`@lid`):** Identificar e tratar JIDs do tipo `@lid` (IDs internos do WhatsApp que mascaram a identidade real dos usuários). Usar a inteligência do Baileys para buscar correspondências de nomes ou contatos amigáveis e evitar a exibição de números desconhecidos como `126010179747935`.
+*   **3.3. Sincronização de Contatos no SQLite:** Criar tabela de `contacts` no banco SQLite do servidor e capturar eventos do Baileys (`contacts.upsert`, `contacts.update`) para atualizar continuamente o catálogo local com o mapeamento `jid -> display_name`.
+*   **3.4. Enriquecimento da Mensagem no Servidor:** Ajustar a mensagem entregue via WebSocket do servidor para o cliente Python, de modo que já contenha os campos formatados `senderName` e `senderNumber`, simplificando a renderização na UI Python.
 
 ---
-**Fim das Especificações.** 
-**Ação para a IA:** Responda confirmando o entendimento deste documento pergunte se pode iniciar a codificação da **FASE 1** (somente), gerando os arquivos do servidor e do cliente e explicando detalhadamente o que cada bloco faz.
+
+## 🌟 FASE 4: A APLICAÇÃO COMPLETA (Implementar apenas após aprovação da Fase 3)
+**Objetivo:** UI completa, motor de privacidade e filtros avançados.
+
+*   **4.1. UI Master-Detail (`main.py`):** Adicionar um Sidebar (contatos) à esquerda do Dashboard/Chat.
+*   **4.2. Auto-Privacy (Toast do Cliente):** Atualizar o Toast para borrar o texto após X segundos e empilhar badges vermelhos de contagem. Clicar no Toast abre o Chat correspondente.
+*   **4.3. Web UI e Configurações (`src/config.js`):** Criar os botões na UI do Python ou na interface Web do servidor para gerenciar Whitelist/Blacklist (Contatos, Grupos e Canais), Modo Não Perturbe e Tempo de Censura. O Node deve aplicar os filtros (descartando mensagens da blacklist na raiz).
+*   **4.4. Pipeline de Mídia (Baileys + Python):** Implementar os 3 estágios de economia de dados: (1) Preview Thumbnail -> (2) Download em RAM sob demanda -> (3) Gravar em Disco.
+
+---
+**Fim das Especificações.**

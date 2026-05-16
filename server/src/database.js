@@ -31,6 +31,12 @@ export async function initDatabase() {
     )
   `);
 
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS muted_chats (
+      remoteJid TEXT PRIMARY KEY
+    )
+  `);
+
   console.log('[DB] Banco de dados inicializado em:', dbPath);
   return db;
 }
@@ -68,5 +74,35 @@ export async function getHistory(limit = 50) {
   } catch (error) {
     console.error('[DB] Erro ao buscar histórico:', error);
     return [];
+  }
+}
+
+/**
+ * Define se um chat está silenciado no banco de dados.
+ */
+export async function setChatMutedStatus(remoteJid, isMuted) {
+  if (!db) await initDatabase();
+  try {
+    if (isMuted) {
+      await db.run('INSERT OR REPLACE INTO muted_chats (remoteJid) VALUES (?)', [remoteJid]);
+    } else {
+      await db.run('DELETE FROM muted_chats WHERE remoteJid = ?', [remoteJid]);
+    }
+  } catch (error) {
+    console.error('[DB] Erro ao atualizar status de silêncio do chat:', error);
+  }
+}
+
+/**
+ * Verifica se um chat está marcado como silenciado no banco de dados.
+ */
+export async function isChatMutedInDB(remoteJid) {
+  if (!db) await initDatabase();
+  try {
+    const row = await db.get('SELECT 1 FROM muted_chats WHERE remoteJid = ?', [remoteJid]);
+    return !!row;
+  } catch (error) {
+    console.error('[DB] Erro ao verificar silêncio do chat no banco:', error);
+    return false;
   }
 }
