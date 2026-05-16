@@ -269,7 +269,8 @@ export async function connectToWhatsApp() {
               from: sender,
               text: text,
               sticker: stickerBase64,
-              timestamp: Date.now()
+              timestamp: Date.now(),
+              remoteJid: msg.key.remoteJid
             }
           });
         }
@@ -320,4 +321,12 @@ export async function resetSession() {
   sock = null;
   connectToWhatsApp();
   return true;
+}
+
+/**
+ * Envia uma mensagem de texto para um JID específico
+ */
+export async function sendMessage(remoteJid, text) {
+  if (!sock) throw new Error('WhatsApp não está conectado');
+  return await sock.sendMessage(remoteJid, { text });
 }

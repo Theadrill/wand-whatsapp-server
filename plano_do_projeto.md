@@ -78,9 +78,9 @@ wand-whatsapp-server/
 ## 💾 FASE 2: HISTÓRICO E PERSISTÊNCIA
 **Objetivo:** Adicionar armazenamento local e uma janela minimalista para visualização de mensagens anteriores.
 
-*   **2.1. Banco de Dados e Histórico (`src/database.js` e SQLite):** Salvar as mensagens recebidas localmente no Node e criar rotas WS para o cliente pedir histórico.
-*   **2.2. Janela Mínima de Histórico (`main.py`):** Desenvolver uma janela mínima no cliente Python que exibe o histórico de mensagens recentes com persistência que será acessada ao clicar no icone da bandeija ou em qualquer lugar do toast que não seja o botão X. A janela mínima vai mostrar as mensagens ordenadas por data e hora, com o nome do remetente, o texto da mensagem e o horário em que foi recebida, em uma lista.
-*   **2.3. Resposta via Histórico:** Habilidade de responder a uma mensagem ao clicar diretamente em uma das mensagens listadas na janela de histórico.
+*   **[X] 2.1. Banco de Dados e Histórico (`src/database.js` e SQLite):** Salvar as mensagens recebidas localmente no Node e criar rotas WS para o cliente pedir histórico.
+*   **[X] 2.2. Janela Mínima de Histórico (`main.py`):** Desenvolver uma janela mínima no cliente Python que exibe o histórico de mensagens recentes com persistência que será acessada ao clicar no icone da bandeija ou em qualquer lugar do toast que não seja o botão X. A janela mínima vai mostrar as mensagens ordenadas por data e hora, com o nome do remetente, o texto da mensagem e o horário em que foi recebida, em uma lista.
+*   **[X] 2.3. Resposta via Histórico:** Habilidade de responder a uma mensagem ao clicar diretamente em uma das mensagens listadas na janela de histórico.
 
 ---
 

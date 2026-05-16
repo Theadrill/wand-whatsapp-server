@@ -158,8 +158,9 @@ class ToastNotification(ctk.CTkToplevel):
             self.after(2000, self.force_on_top)
 
 class HistoryWindow(ctk.CTkToplevel):
-    def __init__(self, master, history_data=[]):
+    def __init__(self, master, history_data=[], on_send_callback=None):
         super().__init__(master)
+        self.on_send_callback = on_send_callback
         
         # Configurações da Janela
         self.title("W.A.N.D. - Histórico")
@@ -191,10 +192,16 @@ class HistoryWindow(ctk.CTkToplevel):
             border_width=0
         )
         self.main_container.place(relx=0.5, rely=0.5, relwidth=0.90, relheight=0.90, anchor="center")
+        
+        # Configuração rígida do Grid
+        self.main_container.grid_rowconfigure(0, weight=0) # Título: tamanho fixo
+        self.main_container.grid_rowconfigure(1, weight=1) # Conteúdo: expande totalmente
+        self.main_container.grid_rowconfigure(2, weight=0) # Rodapé: tamanho fixo
+        self.main_container.grid_columnconfigure(0, weight=1)
 
         # Barra de Título
         self.title_bar = ctk.CTkFrame(self.main_container, fg_color="transparent", height=40)
-        self.title_bar.pack(fill="x", side="top", pady=(10, 0), padx=20)
+        self.title_bar.grid(row=0, column=0, sticky="ew", pady=(5, 0), padx=20)
         
         self.title_label = ctk.CTkLabel(
             self.title_bar, text="Histórico de Notificações",
@@ -232,7 +239,7 @@ class HistoryWindow(ctk.CTkToplevel):
 
         # --- BARRA DE RODAPÉ (Estilo Barra de Título) ---
         self.bottom_bar = ctk.CTkFrame(self.main_container, fg_color="transparent", height=25)
-        self.bottom_bar.pack(fill="x", side="bottom", pady=(0, 5), padx=20)
+        self.bottom_bar.grid(row=2, column=0, sticky="ew", pady=(0, 5), padx=20)
 
         self.lbl_footer = ctk.CTkLabel(
             self.bottom_bar,
@@ -246,7 +253,12 @@ class HistoryWindow(ctk.CTkToplevel):
         self.scrollable_frame = ctk.CTkScrollableFrame(
             self.main_container, fg_color="transparent", corner_radius=0
         )
-        self.scrollable_frame.pack(fill="both", expand=True, padx=10, pady=(10, 0))
+        # sticky="nsew" faz ela grudar no teto do título e no chão do rodapé
+        self.scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=0)
+
+        # Container interno para as mensagens (fixado no topo)
+        self.messages_container = ctk.CTkFrame(self.scrollable_frame, fg_color="transparent")
+        self.messages_container.pack(fill="x", side="top")
 
         self.update_history(history_data)
 
@@ -258,30 +270,28 @@ class HistoryWindow(ctk.CTkToplevel):
 
     def update_history(self, data):
         self.current_data = data # Guarda os dados atuais para redimensionamento
-        # Limpa widgets antigos
-        for widget in self.scrollable_frame.winfo_children():
+        # Limpa APENAS as mensagens, sem quebrar a estrutura do scroll
+        for widget in self.messages_container.winfo_children():
             widget.destroy()
             
         if not data:
             lbl_empty = ctk.CTkLabel(
-                self.scrollable_frame, text="Nenhuma mensagem recente.",
+                self.messages_container, text="Nenhuma mensagem recente.",
                 font=ctk.CTkFont(size=13), text_color="#8E8E93"
             )
             lbl_empty.pack(pady=20)
             return
 
         for msg in data:
-            self.create_message_card(msg)
+            self.create_message_card(msg, parent=self.messages_container)
             
         # Garante que o scroll suba ao topo ao carregar a lista
         self.scrollable_frame._parent_canvas.yview_moveto(0)
-        # Ajusta a visibilidade do scroll após inserir os itens
-        self.after(10, self._adjust_scrollbar_visibility)
+        # Removido ajuste de scrollbar temporariamente para testar estabilidade
 
     def _adjust_scrollbar_visibility(self):
         """Esconde ou mostra a barra de scroll dependendo do tamanho do conteúdo"""
         try:
-            self.update_idletasks()
             # Bbox "all" retorna (x1, y1, x2, y2) de todo o conteúdo do canvas interno
             bbox = self.scrollable_frame._parent_canvas.bbox("all")
             if not bbox: return
@@ -293,13 +303,14 @@ class HistoryWindow(ctk.CTkToplevel):
                 # Esconde a barra de scroll interna do CTkScrollableFrame
                 self.scrollable_frame._scrollbar.grid_forget()
             else:
-                # Mostra a barra (recolocando-a no grid original do componente)
-                self.scrollable_frame._scrollbar.grid(row=0, column=1, sticky="ns")
+                # self.scrollable_frame._scrollbar.grid(row=0, column=1, sticky="ns")
+                pass
         except:
             pass
 
     def create_message_card(self, msg, parent=None, is_reply_mode=False):
-        target = parent if parent else self.scrollable_frame
+        # Se não houver pai definido, usa o container de mensagens padrão
+        target = parent if parent else self.messages_container
         
         card = ctk.CTkFrame(
             target, fg_color="#FFFFFF",
@@ -343,8 +354,8 @@ class HistoryWindow(ctk.CTkToplevel):
 
     def show_reply_view(self, msg):
         """Muda a interface para o modo de resposta de uma mensagem específica"""
-        # Esconde a lista original
-        self.scrollable_frame.pack_forget()
+        # Esconde a lista original (remove do grid temporariamente)
+        self.scrollable_frame.grid_remove()
         
         # Container centralizado verticalmente na janela principal
         self.reply_view = ctk.CTkFrame(self.main_container, fg_color="transparent")
@@ -367,12 +378,16 @@ class HistoryWindow(ctk.CTkToplevel):
         self.reply_input.pack(fill="x", padx=15, pady=20)
         self.reply_input.focus_set()
         
-        # Botão de Enviar (Visual)
+        # Botão de Enviar
         self.btn_send = ctk.CTkButton(
             self.reply_view, text="Enviar Resposta",
-            height=35, corner_radius=18, fg_color="#007AFF", hover_color="#0056B3"
+            height=35, corner_radius=18, fg_color="#007AFF", hover_color="#0056B3",
+            command=lambda: self.handle_send(msg)
         )
         self.btn_send.pack(pady=(0, 10), padx=15, fill="x")
+
+        # Atalho: Enter para enviar
+        self.reply_input.bind("<Return>", lambda e: self.handle_send(msg))
 
         # Botão Voltar
         self.btn_back = ctk.CTkButton(
@@ -389,8 +404,20 @@ class HistoryWindow(ctk.CTkToplevel):
         """Volta para a visualização de lista"""
         if hasattr(self, 'reply_view'):
             self.reply_view.destroy()
-        self.scrollable_frame.pack(fill="both", expand=True, padx=10, pady=(10, 0))
+        # Restaura o scroll com os parâmetros completos para evitar perda de alinhamento
+        self.scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=0) 
         self.update_history(self.current_data)
+
+    def handle_send(self, msg):
+        """Coleta o texto e dispara o callback de envio"""
+        text = self.reply_input.get().strip()
+        if text and self.on_send_callback:
+            remoteJid = msg.get("remoteJid")
+            if remoteJid:
+                # Chama o callback (main.py cuidará do WebSocket)
+                self.on_send_callback(remoteJid, text)
+                # Volta para a lista após enviar
+                self.back_to_list()
 
     def start_move(self, event):
         self.x = event.x

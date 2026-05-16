@@ -1,5 +1,6 @@
 import { WebSocketServer } from 'ws';
 import { getHistory } from './database.js';
+import { sendMessage } from './whatsapp.js';
 
 let wss;
 const clients = new Set();
@@ -36,6 +37,17 @@ export function setupWebSocket(server) {
           const limit = payload.limit || 50;
           const history = await getHistory(limit);
           ws.send(JSON.stringify({ type: 'history', data: history }));
+        } else if (payload.type === 'send_message') {
+          const { remoteJid, text } = payload;
+          try {
+            await sendMessage(remoteJid, text);
+            console.log(`[WebSocket] Resposta enviada para ${remoteJid}`);
+            // Opcional: Notificar sucesso ao cliente
+            ws.send(JSON.stringify({ type: 'send_status', status: 'success', remoteJid }));
+          } catch (err) {
+            console.error('[WebSocket] Erro ao enviar resposta:', err.message);
+            ws.send(JSON.stringify({ type: 'send_status', status: 'error', message: err.message }));
+          }
         }
       } catch (error) {
         console.error('[WebSocket] Erro ao processar mensagem do cliente:', error.message);
