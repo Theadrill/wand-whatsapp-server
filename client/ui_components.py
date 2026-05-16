@@ -273,6 +273,8 @@ class HistoryWindow(ctk.CTkToplevel):
         for msg in data:
             self.create_message_card(msg)
             
+        # Garante que o scroll suba ao topo ao carregar a lista
+        self.scrollable_frame._parent_canvas.yview_moveto(0)
         # Ajusta a visibilidade do scroll após inserir os itens
         self.after(10, self._adjust_scrollbar_visibility)
 
@@ -296,12 +298,19 @@ class HistoryWindow(ctk.CTkToplevel):
         except:
             pass
 
-    def create_message_card(self, msg):
+    def create_message_card(self, msg, parent=None, is_reply_mode=False):
+        target = parent if parent else self.scrollable_frame
+        
         card = ctk.CTkFrame(
-            self.scrollable_frame, fg_color="#FFFFFF",
+            target, fg_color="#FFFFFF",
             corner_radius=12, border_width=1, border_color="#E5E5EA"
         )
         card.pack(fill="x", pady=5, padx=5)
+
+        # Se não estiver no modo resposta, permite clicar para responder
+        if not is_reply_mode:
+            card.configure(cursor="hand2")
+            card.bind("<Button-1>", lambda e: self.show_reply_view(msg))
 
         lbl_from = ctk.CTkLabel(
             card, text=msg.get("senderName", "Desconhecido"),
@@ -309,6 +318,7 @@ class HistoryWindow(ctk.CTkToplevel):
             text_color="#000000"
         )
         lbl_from.pack(anchor="w", padx=15, pady=(10, 0))
+        if not is_reply_mode: lbl_from.bind("<Button-1>", lambda e: self.show_reply_view(msg))
 
         lbl_text = ctk.CTkLabel(
             card, text=msg.get("text", ""),
@@ -319,6 +329,7 @@ class HistoryWindow(ctk.CTkToplevel):
         # Quebra de linha dinâmica baseada na largura da janela
         lbl_text.configure(wraplength=self.winfo_width() - 80)
         lbl_text.pack(anchor="w", padx=15, pady=(5, 10))
+        if not is_reply_mode: lbl_text.bind("<Button-1>", lambda e: self.show_reply_view(msg))
 
         # Formatação simples da data (se disponível)
         ts = msg.get("timestamp", 0)
@@ -329,6 +340,57 @@ class HistoryWindow(ctk.CTkToplevel):
             card, text=time_str, font=ctk.CTkFont(size=10), text_color="#8E8E93"
         )
         lbl_time.place(relx=1.0, rely=1.0, x=-10, y=-5, anchor="se")
+
+    def show_reply_view(self, msg):
+        """Muda a interface para o modo de resposta de uma mensagem específica"""
+        # Esconde a lista original
+        self.scrollable_frame.pack_forget()
+        
+        # Container centralizado verticalmente na janela principal
+        self.reply_view = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.reply_view.place(relx=0.5, rely=0.45, relwidth=0.9, anchor="center")
+        
+        # Card da mensagem em destaque
+        self.create_message_card(msg, parent=self.reply_view, is_reply_mode=True)
+        
+        # Campo de Input estilo Mac/iOS
+        self.reply_input = ctk.CTkEntry(
+            self.reply_view, 
+            placeholder_text="Escreva uma resposta...",
+            height=40,
+            corner_radius=20,
+            border_width=1,
+            fg_color="#FFFFFF",
+            text_color="#000000",
+            placeholder_text_color="#8E8E93"
+        )
+        self.reply_input.pack(fill="x", padx=15, pady=20)
+        self.reply_input.focus_set()
+        
+        # Botão de Enviar (Visual)
+        self.btn_send = ctk.CTkButton(
+            self.reply_view, text="Enviar Resposta",
+            height=35, corner_radius=18, fg_color="#007AFF", hover_color="#0056B3"
+        )
+        self.btn_send.pack(pady=(0, 10), padx=15, fill="x")
+
+        # Botão Voltar
+        self.btn_back = ctk.CTkButton(
+            self.reply_view, text="← Voltar",
+            fg_color="transparent", text_color="#8E8E93", hover_color="#E5E5EA",
+            width=100, height=25,
+            command=self.back_to_list
+        )
+        self.btn_back.pack(pady=5)
+        
+        self._adjust_scrollbar_visibility()
+
+    def back_to_list(self):
+        """Volta para a visualização de lista"""
+        if hasattr(self, 'reply_view'):
+            self.reply_view.destroy()
+        self.scrollable_frame.pack(fill="both", expand=True, padx=10, pady=(10, 0))
+        self.update_history(self.current_data)
 
     def start_move(self, event):
         self.x = event.x
