@@ -8,7 +8,7 @@
 1. **Explicação de Código:** Sempre que gerar um novo código ou arquivo, você **DEVE** mostrar e explicar o que cada parte do código está fazendo. Não entregue apenas o código cru.
 2. **Vanilla Node.js:** O servidor deve ser feito em Node.js o mais vanilla possível (sem frameworks pesados no frontend da web).
 3. **Ambiente Dinâmico:** O sistema será acessado via Hostname (Tailscale), pois o IP do servidor é dinâmico. O cliente Python deve lidar com tentativas de reconexão automática (*reconnect heartbeat*).
-4. **Passo a Passo:** Siga estritamente as fases de desenvolvimento abaixo. **Não tente implementar a Fase 2 antes que a Fase 1 esteja 100% funcional, testada e aprovada pelo usuário.**
+4. **Passo a Passo:** Siga estritamente as fases de desenvolvimento abaixo. **Não tente implementar a próxima fase antes que a anterior esteja 100% funcional, testada e aprovada pelo usuário.**
 5. **Arquitetura Modular:** Respeite a separação de responsabilidades (Separation of Concerns) no lado do servidor.
 6. **Identificação da Sessão:** Ao conectar via QR Code, a sessão deve ser identificada no WhatsApp como **"WAND Server"**.
 7. **Código Limpo:** Nunca utilize CSS ou Scripts inline nos arquivos HTML. Estilos e lógicas devem sempre residir em arquivos separados (`.css` e `.js`) para garantir a modularidade e facilidade de manutenção.
@@ -75,14 +75,22 @@ wand-whatsapp-server/
 
 ---
 
-## 🌟 FASE 2: A APLICAÇÃO COMPLETA (Implementar apenas após aprovação da Fase 1)
-**Objetivo:** Adicionar persistência, UI completa, motor de privacidade e filtros.
+## 💾 FASE 2: HISTÓRICO E PERSISTÊNCIA
+**Objetivo:** Adicionar armazenamento local e uma janela minimalista para visualização de mensagens anteriores.
 
 *   **2.1. Banco de Dados e Histórico (`src/database.js` e SQLite):** Salvar as mensagens recebidas localmente no Node e criar rotas WS para o cliente pedir histórico.
-*   **2.2. UI Master-Detail (`main.py`):** Mudar de apenas um Toast para uma Janela Principal em CustomTkinter contendo a Sidebar (contatos) à esquerda e o Dashboard/Chat à direita.
-*   **2.3. Auto-Privacy (Toast do Cliente):** Atualizar o Toast para borrar o texto após X segundos e empilhar badges vermelhos de contagem. Clicar no Toast abre o Chat correspondente.
-*   **2.4. Web UI e Configurações (`src/config.js`):** Criar os botões na UI do Python ou na interface Web do servidor para gerenciar Whitelist/Blacklist (Contatos, Grupos e Canais), Modo Não Perturbe e Tempo de Censura. O Node deve aplicar os filtros (descartando mensagens da blacklist na raiz).
-*   **2.5. Pipeline de Mídia (Baileys + Python):** Implementar os 3 estágios de economia de dados: (1) Preview Thumbnail -> (2) Download em RAM sob demanda -> (3) Gravar em Disco.
+*   **2.2. Janela Mínima de Histórico (`main.py`):** Desenvolver uma janela mínima no cliente Python que exibe o histórico de mensagens recentes com persistência que será acessada ao clicar no icone da bandeija ou em qualquer lugar do toast que não seja o botão X. A janela mínima vai mostrar as mensagens ordenadas por data e hora, com o nome do remetente, o texto da mensagem e o horário em que foi recebida, em uma lista.
+*   **2.3. Resposta via Histórico:** Habilidade de responder a uma mensagem ao clicar diretamente em uma das mensagens listadas na janela de histórico.
+
+---
+
+## 🌟 FASE 3: A APLICAÇÃO COMPLETA (Implementar apenas após aprovação da Fase 2)
+**Objetivo:** UI completa, motor de privacidade e filtros avançados.
+
+*   **3.1. UI Master-Detail (`main.py`):** Mudar de apenas um Toast para uma Janela Principal em CustomTkinter contendo a Sidebar (contatos) à esquerda e o Dashboard/Chat à direita.
+*   **3.2. Auto-Privacy (Toast do Cliente):** Atualizar o Toast para borrar o texto após X segundos e empilhar badges vermelhos de contagem. Clicar no Toast abre o Chat correspondente.
+*   **3.3. Web UI e Configurações (`src/config.js`):** Criar os botões na UI do Python ou na interface Web do servidor para gerenciar Whitelist/Blacklist (Contatos, Grupos e Canais), Modo Não Perturbe e Tempo de Censura. O Node deve aplicar os filtros (descartando mensagens da blacklist na raiz).
+*   **3.4. Pipeline de Mídia (Baileys + Python):** Implementar os 3 estágios de economia de dados: (1) Preview Thumbnail -> (2) Download em RAM sob demanda -> (3) Gravar em Disco.
 
 ---
 **Fim das Especificações.** 
