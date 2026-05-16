@@ -18,7 +18,7 @@
   "author": "",
   "license": "GPL-3.0",
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.1",
+    "@whiskeysockets/baileys": "^7.0.0-rc11",
     "jimp": "^1.6.1",
     "node-notifier": "^10.0.1",
     "pino": "^8.19.0",
