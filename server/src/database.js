@@ -13,7 +13,7 @@ let db;
  * Cria a tabela de mensagens se ela não existir.
  */
 export async function initDatabase() {
-  const dbPath = path.join(__dirname, '..', 'user_messages.db');
+  const dbPath = path.join(__dirname, '..', 'user.db');
   
   db = await open({
     filename: dbPath,

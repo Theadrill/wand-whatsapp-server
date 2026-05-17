@@ -160,6 +160,17 @@ class WANDClient:
                     self.current_toast = ToastNotification(self.root, sender, text, sticker)
                     self.current_toast.set_click_callback(self.show_history)
 
+                    # Atualiza a janela de histórico em tempo real se ela estiver aberta
+                    if self.history_window and self.history_window.winfo_exists():
+                        new_msg = {
+                            "remoteJid": data.get("remoteJid", ""),
+                            "senderName": sender,
+                            "text": text,
+                            "timestamp": data.get("timestamp", 0),
+                            "fromMe": 1 if sender == "Você" else 0
+                        }
+                        self.history_window.add_message_to_top(new_msg)
+
                 elif msg_type == "history":
                     history_list = msg_data.get("data", [])
                     if self.history_window and self.history_window.winfo_exists():

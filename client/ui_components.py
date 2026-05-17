@@ -375,7 +375,33 @@ class HistoryWindow(ctk.CTkToplevel):
         except:
             pass
 
-    def create_message_card(self, msg, parent=None, is_reply_mode=False):
+    def add_message_to_top(self, msg):
+        """Adiciona uma nova mensagem no topo do histórico de forma dinâmica e sem redesenhar toda a tela"""
+        if self.current_data is None:
+            self.current_data = []
+            
+        # Evita duplicidade (caso a mensagem já tenha sido adicionada localmente ou venha do websocket)
+        for existing in self.current_data[:3]:
+            if (existing.get("text") == msg.get("text") and 
+                existing.get("remoteJid") == msg.get("remoteJid") and 
+                abs(existing.get("timestamp", 0) - msg.get("timestamp", 0)) < 5000):
+                return
+                
+        self.current_data.insert(0, msg)
+        
+        # Se havia a mensagem de "Nenhuma mensagem recente", remove ela
+        children = self.messages_container.winfo_children()
+        if len(children) == 1 and isinstance(children[0], ctk.CTkLabel) and children[0].cget("text") == "Nenhuma mensagem recente.":
+            children[0].destroy()
+            
+        # Cria o card e insere no topo
+        self.create_message_card(msg, parent=self.messages_container, prepend=True)
+        
+        # Garante que o scroll suba ao topo para ver a nova mensagem
+        self.scrollable_frame._parent_canvas.yview_moveto(0)
+        self._adjust_scrollbar_visibility()
+
+    def create_message_card(self, msg, parent=None, is_reply_mode=False, prepend=False):
         # Se não houver pai definido, usa o container de mensagens padrão
         target = parent if parent else self.messages_container
         
@@ -383,7 +409,20 @@ class HistoryWindow(ctk.CTkToplevel):
             target, fg_color="#FFFFFF",
             corner_radius=12, border_width=1, border_color="#E5E5EA"
         )
-        card.pack(fill="x", pady=5, padx=5)
+        
+        if prepend:
+            slaves = target.pack_slaves()
+            first_packed_child = None
+            for slave in slaves:
+                if slave != card:
+                    first_packed_child = slave
+                    break
+            if first_packed_child:
+                card.pack(fill="x", pady=5, padx=5, before=first_packed_child)
+            else:
+                card.pack(fill="x", pady=5, padx=5)
+        else:
+            card.pack(fill="x", pady=5, padx=5)
 
         # Se não estiver no modo resposta, permite clicar para responder
         if not is_reply_mode:
@@ -477,13 +516,26 @@ class HistoryWindow(ctk.CTkToplevel):
         self.scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=0)
 
     def handle_send(self, msg):
-        """Coleta o texto e dispara o callback de envio"""
+        """Coleta o texto, dispara o callback de envio e adiciona a resposta no topo do histórico sem redesenhar"""
         text = self.reply_input.get().strip()
         if text and self.on_send_callback:
             remoteJid = msg.get("remoteJid")
             if remoteJid:
                 # Chama o callback (main.py cuidará do WebSocket)
                 self.on_send_callback(remoteJid, text)
+                
+                # Prepara o objeto da mensagem enviada
+                reply_msg = {
+                    "remoteJid": remoteJid,
+                    "senderName": "Você",
+                    "text": text,
+                    "timestamp": int(datetime.datetime.now().timestamp() * 1000),
+                    "fromMe": 1
+                }
+                
+                # Adiciona no topo do histórico dinamicamente
+                self.add_message_to_top(reply_msg)
+                
                 # Volta para a lista após enviar
                 self.back_to_list()
 
