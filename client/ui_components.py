@@ -250,12 +250,10 @@ class HistoryWindow(ctk.CTkToplevel):
         )
         self.lbl_footer.place(relx=0.5, rely=0.5, anchor="center")
  
-        # Área de Scroll
+        # Área de Scroll (Inicialmente NÃO gridada/oculta por padrão)
         self.scrollable_frame = ctk.CTkScrollableFrame(
             self.main_container, fg_color="transparent", corner_radius=0
         )
-        # sticky="nsew" faz ela grudar no teto do título e no chão do rodapé
-        self.scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=0)
  
         # Container interno para as mensagens (fixado no topo)
         self.messages_container = ctk.CTkFrame(self.scrollable_frame, fg_color="transparent")
@@ -269,43 +267,89 @@ class HistoryWindow(ctk.CTkToplevel):
         self.title_label.bind("<ButtonPress-1>", self.start_move)
         self.title_label.bind("<B1-Motion>", self.do_move)
  
+    def show_loading_screen(self):
+        """Exibe a tela de carregamento centralizada diretamente na janela principal, com o scroll oculto"""
+        if hasattr(self, "loading_frame") and self.loading_frame:
+            try:
+                self.loading_frame.destroy()
+            except:
+                pass
+                
+        # Oculta o frame de scroll se ele estiver visível
+        self.scrollable_frame.grid_remove()
+        
+        # Cria um container centralizado e transparente para a animação do texto
+        self.loading_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.loading_frame.place(relx=0.5, rely=0.53, anchor="center")
+        
+        lbl_loading = ctk.CTkLabel(
+            self.loading_frame, text="Carregando mensagens...",
+            font=ctk.CTkFont(family="Segoe UI Variable Text", size=14, weight="bold"),
+            text_color="#007AFF"
+        )
+        lbl_loading.pack(pady=(0, 5))
+        
+        lbl_loading_sub = ctk.CTkLabel(
+            self.loading_frame, text="Sincronizando com o servidor W.A.N.D.",
+            font=ctk.CTkFont(family="Segoe UI Variable Text", size=11),
+            text_color="#8E8E93"
+        )
+        lbl_loading_sub.pack(pady=0)
+
     def update_history(self, data):
         self.current_data = data # Guarda os dados atuais para redimensionamento
-        # Limpa APENAS as mensagens, sem quebrar a estrutura do scroll
-        for widget in self.messages_container.winfo_children():
-            widget.destroy()
             
         if data is None:
-            # Estado Premium de Carregamento
-            lbl_loading = ctk.CTkLabel(
-                self.messages_container, text="Carregando mensagens...",
-                font=ctk.CTkFont(family="Segoe UI Variable Text", size=14, weight="bold"),
-                text_color="#007AFF"
-            )
-            lbl_loading.pack(pady=(60, 5))
-            
-            lbl_loading_sub = ctk.CTkLabel(
-                self.messages_container, text="Sincronizando com o servidor W.A.N.D.",
-                font=ctk.CTkFont(family="Segoe UI Variable Text", size=11),
-                text_color="#8E8E93"
-            )
-            lbl_loading_sub.pack(pady=(0, 20))
+            self.show_loading_screen()
             return
             
         if not data:
+            # Destrói a tela de carregamento se existir
+            if hasattr(self, "loading_frame") and self.loading_frame:
+                try:
+                    self.loading_frame.destroy()
+                except:
+                    pass
+                self.loading_frame = None
+                
+            # Limpa e exibe a mensagem de lista vazia dentro do scroll
+            for widget in self.messages_container.winfo_children():
+                widget.destroy()
             lbl_empty = ctk.CTkLabel(
                 self.messages_container, text="Nenhuma mensagem recente.",
                 font=ctk.CTkFont(size=13), text_color="#8E8E93"
             )
             lbl_empty.pack(pady=20)
+            
+            # Exibe o scrollable frame com a mensagem vazia
+            self.scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=0)
             return
 
+        # --- REVELAÇÃO NATIVA (FADE-IN DIGITAL) ---
+        # 1. Limpa o container de mensagens (enquanto o scroll está ocultado/sem grid)
+        for widget in self.messages_container.winfo_children():
+            widget.destroy()
+        
+        # 2. Constrói todos os cards de forma oculta na memória
         for msg in data:
             self.create_message_card(msg, parent=self.messages_container)
             
+        # 3. Destrói o frame de carregamento
+        if hasattr(self, "loading_frame") and self.loading_frame:
+            try:
+                self.loading_frame.destroy()
+            except:
+                pass
+            self.loading_frame = None
+            
+        # 4. Envia o scrollable frame para a tela (grid ativa o motor geométrico do Tkinter)
+        self.scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=0)
+        
+        # 5. Força o redesenho síncrono dos cards prontos em frações de milissegundo
+        self.update_idletasks()
+            
         # Garante que o scroll suba ao topo ao carregar a lista
         self.scrollable_frame._parent_canvas.yview_moveto(0)
-        # Removido ajuste de scrollbar temporariamente para testar estabilidade
 
     def _adjust_scrollbar_visibility(self):
         """Esconde ou mostra a barra de scroll dependendo do tamanho do conteúdo"""
