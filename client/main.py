@@ -63,7 +63,16 @@ class WANDClient:
         self.is_running = False
         self._shutdown_async_loop()
         self.tray.stop()
-        self.root.after(200, self.root.destroy)  # Dá tempo para o loop encerrar
+        
+        def force_exit():
+            import os
+            try:
+                self.root.destroy()
+            except Exception:
+                pass
+            os._exit(0)
+            
+        self.root.after(200, force_exit)  # Dá tempo para o loop encerrar
 
     def restart_app(self) -> None:
         """Reinicia o processo de forma limpa."""
@@ -72,7 +81,17 @@ class WANDClient:
         self.tray.stop()
         # Reinicia o processo atual de forma robusta no Windows
         subprocess.Popen([sys.executable] + sys.argv)
-        self.root.after(200, self.root.destroy)
+        
+        def force_exit():
+            import os
+            try:
+                self.root.destroy()
+            except Exception:
+                pass
+            os._exit(0)
+            
+        self.root.after(200, force_exit)
+
 
     def _dispatch(self, coro) -> bool:
         """
@@ -88,13 +107,22 @@ class WANDClient:
 
     def show_history(self):
         """Abre ou atualiza a janela de histórico"""
+        # Se a janela já existe e está visível na tela, apenas foca e traz para a frente
+        if self.history_window and self.history_window.winfo_exists():
+            if self.history_window.state() in ("normal", "zoomed"):
+                self.history_window.deiconify()
+                self.history_window.focus_force()
+                self.history_window.lift()
+                return
+
         if not self.history_window or not self.history_window.winfo_exists():
             self.history_window = HistoryWindow(self.root, on_send_callback=self.send_reply)
         
         self.history_window.deiconify()
+        self.history_window.focus_force()
         self.history_window.lift()
 
-        # Agenda com delay curto de 50ms para garantir transição suave de renderização
+        # Agenda a requisição de dados apenas ao abrir a janela inicialmente
         self.root.after(50, self._request_history)
 
     def _request_history(self):

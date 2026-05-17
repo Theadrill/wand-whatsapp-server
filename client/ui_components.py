@@ -267,6 +267,11 @@ class HistoryWindow(ctk.CTkToplevel):
         self.title_label.bind("<ButtonPress-1>", self.start_move)
         self.title_label.bind("<B1-Motion>", self.do_move)
  
+        # Maximizar com duplo clique na barra de título
+        self.title_bar.bind("<Double-Button-1>", lambda event: self.toggle_maximize())
+        self.title_label.bind("<Double-Button-1>", lambda event: self.toggle_maximize())
+
+ 
     def show_loading_screen(self):
         """Exibe a tela de carregamento centralizada diretamente na janela principal, com o scroll oculto"""
         if hasattr(self, "loading_frame") and self.loading_frame:
