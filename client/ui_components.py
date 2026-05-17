@@ -495,29 +495,53 @@ class HistoryWindow(ctk.CTkToplevel):
         self.geometry(f"+{x}+{y}")
 
     def toggle_maximize(self):
+        # Exibe a cortina de carregamento de imediato para ocultar o processo geométrico
+        self.show_loading_screen()
+        self.update_idletasks()  # Força o desenho síncrono da cortina na tela
+
         if not self.is_maximized:
             # Salva posição original para restaurar depois
             self.old_geometry = self.geometry()
             # Pega tamanho da tela
             sw = self.winfo_screenwidth()
             sh = self.winfo_screenheight()
-            # Maximiza ocupando toda a tela (100%) e remove arredondado
+            
+            # 1. Altera a cor de fundo do Toplevel para a cor sólida ANTES de expandir a janela (evita flash preto)
+            self.configure(fg_color=self.bg_color)
+            self.config(bg=self.bg_color)
+            self.update_idletasks()
+            
+            # 2. Altera a geometria e o posicionamento do container (já preenchido com a cor de fundo perfeita)
             self.geometry(f"{sw}x{sh-40}+0+0")
             self.main_container.configure(corner_radius=0)
             self.main_container.place(relwidth=1.0, relheight=1.0)
+            
+            # 3. FORÇA O REDESENHO SÍNCRONO DA JANELA MAXIMIZADA E SEUS COMPONENTES IMEDIATAMENTE
+            self.update_idletasks()
             self.is_maximized = True
-            # Força atualização dos cards para o novo wraplength
-            self.after(100, lambda: self.update_history(self.current_data))
-            self.after(150, self._adjust_scrollbar_visibility)
+            
+            # 4. Reconstrói os cards por trás da cortina já nas novas proporções
+            self.after(50, lambda: self.update_history(self.current_data))
+            self.after(100, self._adjust_scrollbar_visibility)
         else:
-            # Restaura tamanho original e arredondamento
+            # 1. Restaura primeiro a geometria e arredondamento mantendo a cor sólida ativa
             self.geometry(self.old_geometry)
             self.main_container.configure(corner_radius=25)
             self.main_container.place(relwidth=0.90, relheight=0.90)
+            
+            # 2. Sincroniza o redimensionamento físico síncrono para o tamanho menor
+            self.update_idletasks()
+            
+            # 3. Reativa a transparência do Toplevel aplicando a máscara (#000001) com a janela já reduzida
+            self.configure(fg_color="#000001")
+            self.config(bg="#000001")
+            self.update_idletasks()
+            
             self.is_maximized = False
-            # Força atualização dos cards para o novo wraplength
-            self.after(100, lambda: self.update_history(self.current_data))
-            self.after(150, self._adjust_scrollbar_visibility)
+            
+            # 4. Reconstrói os cards por trás da cortina já nas novas proporções
+            self.after(50, lambda: self.update_history(self.current_data))
+            self.after(100, self._adjust_scrollbar_visibility)
 
     def minimize(self):
         """Minimiza a janela contornando a limitação do overrideredirect"""
