@@ -429,8 +429,12 @@ class HistoryWindow(ctk.CTkToplevel):
             card.configure(cursor="hand2")
             card.bind("<Button-1>", lambda e: self.show_reply_view(msg))
 
+        sender_name = msg.get("senderName", "Desconhecido")
+        receiver_name = msg.get("receiverName", "")
+        display_name = f"{sender_name} ---> {receiver_name}" if receiver_name else sender_name
+
         lbl_from = ctk.CTkLabel(
-            card, text=msg.get("senderName", "Desconhecido"),
+            card, text=display_name,
             font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
             text_color="#000000"
         )
@@ -524,10 +528,14 @@ class HistoryWindow(ctk.CTkToplevel):
                 # Chama o callback (main.py cuidará do WebSocket)
                 self.on_send_callback(remoteJid, text)
                 
+                # Pega o nome do contato a partir da mensagem original
+                contact_name = msg.get("senderName") if msg.get("fromMe") == 0 else msg.get("receiverName", "Desconhecido")
+                
                 # Prepara o objeto da mensagem enviada
                 reply_msg = {
                     "remoteJid": remoteJid,
                     "senderName": "Você",
+                    "receiverName": contact_name,
                     "text": text,
                     "timestamp": int(datetime.datetime.now().timestamp() * 1000),
                     "fromMe": 1

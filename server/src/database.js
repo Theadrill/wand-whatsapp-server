@@ -77,7 +77,13 @@ export async function getHistory(limit = 50) {
   
   try {
     return await db.all(
-      'SELECT * FROM messages ORDER BY timestamp DESC LIMIT ?',
+      `SELECT m.*, 
+              c.name as contactName, 
+              c.verifiedName as contactVerifiedName, 
+              c.displayName as contactDisplayName 
+       FROM messages m 
+       LEFT JOIN contacts c ON m.remoteJid = c.jid 
+       ORDER BY m.timestamp DESC LIMIT ?`,
       [limit]
     );
   } catch (error) {

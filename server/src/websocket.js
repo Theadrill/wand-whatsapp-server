@@ -1,6 +1,6 @@
 import { WebSocketServer } from 'ws';
 import { getHistory } from './database.js';
-import { sendMessage } from './whatsapp.js';
+import { sendMessage, getMyName, formatPhoneNumber } from './whatsapp.js';
 
 let wss;
 const clients = new Set();
@@ -36,7 +36,44 @@ export function setupWebSocket(server) {
         if (payload.type === 'get_history') {
           const limit = payload.limit || 50;
           const history = await getHistory(limit);
-          ws.send(JSON.stringify({ type: 'history', data: history }));
+          
+          const myName = getMyName ? getMyName() : 'Você';
+          const enrichedHistory = history.map(msg => {
+            let contactName = msg.contactName || msg.contactVerifiedName || msg.contactDisplayName || msg.senderName || 'Desconhecido';
+            if (contactName === 'Você' && msg.fromMe === 0) {
+              contactName = formatPhoneNumber ? formatPhoneNumber(msg.remoteJid) : msg.remoteJid;
+            }
+            
+            const isGroup = msg.remoteJid.endsWith('@g.us');
+            const groupSuffix = isGroup ? ' (Grupo)' : '';
+            
+            let senderName = msg.senderName;
+            let receiverName = 'Você';
+            
+            if (msg.fromMe === 1) {
+              senderName = myName;
+              receiverName = contactName + groupSuffix;
+            } else {
+              senderName = contactName;
+              if (isGroup) {
+                receiverName = contactName + groupSuffix;
+              } else {
+                receiverName = myName;
+              }
+            }
+            
+            return {
+              id: msg.id,
+              remoteJid: msg.remoteJid,
+              senderName,
+              receiverName,
+              text: msg.text,
+              timestamp: msg.timestamp,
+              fromMe: msg.fromMe
+            };
+          });
+          
+          ws.send(JSON.stringify({ type: 'history', data: enrichedHistory }));
         } else if (payload.type === 'send_message') {
           const { remoteJid, text } = payload;
           try {

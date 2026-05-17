@@ -112,6 +112,14 @@ try {
           console.error(`[DB] Erro ao sincronizar silenciamento inicial de ${id}:`, err);
         });
       }
+      
+      // Sincroniza nome do chat/grupo no banco de dados SQLite
+      if (chat.name) {
+        saveContact({
+          jid: id,
+          name: chat.name
+        }).catch(() => {});
+      }
     });
     console.log('[WhatsApp] Store local carregado e sanitizado.');
   }
@@ -124,6 +132,24 @@ try {
     const data = JSON.parse(fs.readFileSync(contactsPath, 'utf-8'));
     Object.entries(data).forEach(([id, contact]) => {
       contacts.set(id, contact);
+      
+      // Sincroniza no SQLite para garantir consistência no banco de dados
+      saveContact({
+        jid: id,
+        name: contact.name,
+        verifiedName: contact.verifiedName,
+        displayName: contact.displayName
+      }).catch(() => {});
+
+      // Se o contato tiver um LID associado, também salva as informações sob o JID do LID!
+      if (contact.lid) {
+        saveContact({
+          jid: contact.lid,
+          name: contact.name,
+          verifiedName: contact.verifiedName,
+          displayName: contact.displayName
+        }).catch(() => {});
+      }
     });
     console.log('[WhatsApp] Contatos locais carregados.');
   }
@@ -151,7 +177,7 @@ setInterval(persistStores, 10_000);
 /**
  * Formata um JID numérico em máscara elegante: +55 (XX) XXXXX-XXXX
  */
-function formatPhoneNumber(jid) {
+export function formatPhoneNumber(jid) {
   if (!jid) return '';
   const num = jid.split('@')[0];
   if (num.startsWith('55') && (num.length === 12 || num.length === 13)) {
@@ -164,6 +190,19 @@ function formatPhoneNumber(jid) {
     }
   }
   return `+${num}`;
+}
+
+export function getMyName() {
+  if (sock && sock.user) {
+    if (sock.user.name) return sock.user.name;
+    
+    const selfJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+    const selfContact = contacts.get(selfJid);
+    if (selfContact && (selfContact.name || selfContact.verifiedName || selfContact.displayName)) {
+      return selfContact.name || selfContact.verifiedName || selfContact.displayName;
+    }
+  }
+  return 'Você';
 }
 
 /**
@@ -338,6 +377,13 @@ export async function connectToWhatsApp() {
             console.log(`[WhatsApp Sync] Chat silenciado detectado no HISTÓRICO: ${chat.id}`);
           }
           await setChatMutedStatus(chat.id, isMuted);
+          
+          if (chat.name) {
+            await saveContact({
+              jid: chat.id,
+              name: chat.name
+            }).catch(() => {});
+          }
         }
       }
     });
@@ -353,6 +399,13 @@ export async function connectToWhatsApp() {
           console.log(`[WhatsApp Sync] Chat silenciado detectado no UPSERT: ${chat.id}`);
         }
         await setChatMutedStatus(chat.id, isMuted);
+        
+        if (chat.name) {
+          await saveContact({
+            jid: chat.id,
+            name: chat.name
+          }).catch(() => {});
+        }
       }
     });
 
@@ -367,6 +420,13 @@ export async function connectToWhatsApp() {
           console.log(`[WhatsApp Sync] ATUALIZAÇÃO DE SILÊNCIO: Chat ${update.id} teve muteEndTime atualizado para: ${update.muteEndTime}. Silenciado no DB? ${isMuted}`);
           await setChatMutedStatus(update.id, isMuted);
         }
+        
+        if (merged.name) {
+          await saveContact({
+            jid: update.id,
+            name: merged.name
+          }).catch(() => {});
+        }
       }
     });
 
@@ -379,6 +439,16 @@ export async function connectToWhatsApp() {
           verifiedName: contact.verifiedName,
           displayName: contact.displayName
         });
+
+        // Se o contato tiver um LID associado, salva também sob o JID do LID
+        if (contact.lid) {
+          await saveContact({
+            jid: contact.lid,
+            name: contact.name,
+            verifiedName: contact.verifiedName,
+            displayName: contact.displayName
+          });
+        }
       }
     });
 
@@ -393,6 +463,16 @@ export async function connectToWhatsApp() {
           verifiedName: merged.verifiedName,
           displayName: merged.displayName
         });
+
+        // Se o contato tiver um LID associado, atualiza também sob o JID do LID
+        if (merged.lid) {
+          await saveContact({
+            jid: merged.lid,
+            name: merged.name,
+            verifiedName: merged.verifiedName,
+            displayName: merged.displayName
+          });
+        }
       }
     });
 
@@ -492,15 +572,34 @@ export async function connectToWhatsApp() {
             fromMe: isMe
           });
 
+          const myName = getMyName();
+          const contactName = await resolveSenderName({ key: { remoteJid: msg.key.remoteJid, fromMe: false } });
+          
+          const groupSuffix = isGroup ? ' (Grupo)' : '';
+
+          let senderName, receiverName;
+          if (isMe) {
+            senderName = myName;
+            receiverName = contactName + groupSuffix;
+          } else {
+            senderName = sender;
+            if (isGroup) {
+              receiverName = contactName + groupSuffix;
+            } else {
+              receiverName = myName;
+            }
+          }
+
           broadcast({
             type: 'message',
             data: {
-              from: sender,
+              from: senderName,
               text: text,
               sticker: stickerBase64,
               timestamp: Date.now(),
               remoteJid: msg.key.remoteJid,
-              senderName: sender,
+              senderName: senderName,
+              receiverName: receiverName,
               senderNumber: senderNumber
             }
           });

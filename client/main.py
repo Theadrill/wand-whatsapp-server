@@ -164,7 +164,8 @@ class WANDClient:
                     if self.history_window and self.history_window.winfo_exists():
                         new_msg = {
                             "remoteJid": data.get("remoteJid", ""),
-                            "senderName": sender,
+                            "senderName": data.get("senderName", sender),
+                            "receiverName": data.get("receiverName", ""),
                             "text": text,
                             "timestamp": data.get("timestamp", 0),
                             "fromMe": 1 if sender == "Você" else 0
