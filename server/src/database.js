@@ -37,6 +37,15 @@ export async function initDatabase() {
     )
   `);
 
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS contacts (
+      jid TEXT PRIMARY KEY,
+      name TEXT,
+      verifiedName TEXT,
+      displayName TEXT
+    )
+  `);
+
   console.log('[DB] Banco de dados inicializado em:', dbPath);
   return db;
 }
@@ -104,5 +113,33 @@ export async function isChatMutedInDB(remoteJid) {
   } catch (error) {
     console.error('[DB] Erro ao verificar silêncio do chat no banco:', error);
     return false;
+  }
+}
+
+/**
+ * Salva ou atualiza um contato no banco de dados SQLite.
+ */
+export async function saveContact({ jid, name, verifiedName, displayName }) {
+  if (!db) await initDatabase();
+  try {
+    await db.run(
+      'INSERT OR REPLACE INTO contacts (jid, name, verifiedName, displayName) VALUES (?, ?, ?, ?)',
+      [jid, name, verifiedName, displayName]
+    );
+  } catch (error) {
+    console.error('[DB] Erro ao salvar contato no banco:', error);
+  }
+}
+
+/**
+ * Recupera um contato do banco de dados SQLite.
+ */
+export async function getContact(jid) {
+  if (!db) await initDatabase();
+  try {
+    return await db.get('SELECT * FROM contacts WHERE jid = ?', [jid]);
+  } catch (error) {
+    console.error('[DB] Erro ao recuperar contato do banco:', error);
+    return null;
   }
 }

@@ -92,9 +92,9 @@ wand-whatsapp-server/
     2. **Agenda Local (`store.contacts`):** Buscar o nome cadastrado na lista de contatos do usuário sincronizada pelo Baileys.
     3. **Nome de Perfil (`pushName`):** Utilizar o nome configurado pelo próprio remetente no WhatsApp.
     4. **Máscara Telefônica:** Formatar o número do telefone de forma elegante (ex: `+55 (11) 99999-9999`) caso nenhum nome seja encontrado.
-*   **3.2. Resolução de IDs Mascarados (`@lid`):** Identificar e tratar JIDs do tipo `@lid` (IDs internos do WhatsApp que mascaram a identidade real dos usuários). Usar a inteligência do Baileys para buscar correspondências de nomes ou contatos amigáveis e evitar a exibição de números desconhecidos como `126010179747935`.
-*   **3.3. Sincronização de Contatos no SQLite:** Criar tabela de `contacts` no banco SQLite do servidor e capturar eventos do Baileys (`contacts.upsert`, `contacts.update`) para atualizar continuamente o catálogo local com o mapeamento `jid -> display_name`.
-*   **3.4. Enriquecimento da Mensagem no Servidor:** Ajustar a mensagem entregue via WebSocket do servidor para o cliente Python, de modo que já contenha os campos formatados `senderName` e `senderNumber`, simplificando a renderização na UI Python.
+*   **[X] 3.2. Resolução de IDs Mascarados (`@lid`):** Identificar e tratar JIDs do tipo `@lid` (IDs internos do WhatsApp que mascaram a identidade real dos usuários). Usar a inteligência do Baileys para buscar correspondências de nomes ou contatos amigáveis e evitar a exibição de números desconhecidos como `126010179747935`.
+*   **[X] 3.3. Sincronização de Contatos no SQLite:** Criar tabela de `contacts` no banco SQLite do servidor e capturar eventos do Baileys (`contacts.upsert`, `contacts.update`) para atualizar continuamente o catálogo local com o mapeamento `jid -> display_name`.
+*   **[X] 3.4. Enriquecimento da Mensagem no Servidor:** Ajustar a mensagem entregue via WebSocket do servidor para o cliente Python, de modo que já contenha os campos formatados `senderName` e `senderNumber`, simplificando a renderização na UI Python.
 
 ---
 
@@ -105,6 +105,43 @@ wand-whatsapp-server/
 *   **4.2. Auto-Privacy (Toast do Cliente):** Atualizar o Toast para borrar o texto após X segundos e empilhar badges vermelhos de contagem. Clicar no Toast abre o Chat correspondente.
 *   **4.3. Web UI e Configurações (`src/config.js`):** Criar os botões na UI do Python ou na interface Web do servidor para gerenciar Whitelist/Blacklist (Contatos, Grupos e Canais), Modo Não Perturbe e Tempo de Censura. O Node deve aplicar os filtros (descartando mensagens da blacklist na raiz).
 *   **4.4. Pipeline de Mídia (Baileys + Python):** Implementar os 3 estágios de economia de dados: (1) Preview Thumbnail -> (2) Download em RAM sob demanda -> (3) Gravar em Disco.
+
+---
+
+## 🔧 REFATORAÇÃO TÉCNICA: Correções de Concorrência e I/O (Maio/2026)
+
+**Objetivo:** Corrigir três falhas estruturais de concorrência e I/O identificadas na auditoria técnica do projeto, aplicando os padrões das skills `python-pro` e `async-python-patterns`.
+
+### Fix 1 — Cliente Python: Fila Thread-Safe (`client/network_client.py` + `client/main.py`)
+
+**Problema:** O canal de comunicação entre a thread `asyncio` (WebSocket) e a thread principal do Tkinter era uma lista Python simples (`msg_queue = []`). O CPython não garante atomicidade em operações concorrentes de `append()` + `pop(0)`, o que poderia causar corrupção de dados ou condições de corrida sob carga alta de mensagens.
+
+**Correção aplicada:**
+- `self.msg_queue` substituído por `queue.Queue()` (da stdlib, inerentemente thread-safe).
+- Escrita: `self.msg_queue.put_nowait(data)` na thread asyncio.
+- Leitura: `self.msg_queue.get_nowait()` com `except queue.Empty` na thread Tkinter.
+- Type hints completos adicionados em `NetworkClient`.
+- `open_timeout=10` adicionado ao `websockets.connect()` para evitar travamento em hosts sem resposta.
+- `CancelledError` tratado explicitamente em `listen()` para suportar shutdown gracioso.
+
+### Fix 2 — Cliente Python: Shutdown Gracioso (`client/main.py`)
+
+**Problema:** `quit_app()` e `restart_app()` usavam `os._exit(0)`, que termina o processo abruptamente sem fechar sockets WebSocket, deixando conexões TCP em estado `TIME_WAIT` no sistema operacional.
+
+**Correção aplicada:**
+- Criado método `_shutdown_async_loop()` que usa `asyncio.all_tasks()` para cancelar todas as corrotinas pendentes no loop antes de parar o loop via `loop.call_soon_threadsafe(loop.stop)`.
+- `os._exit(0)` removido de ambos os métodos.
+- `root.destroy()` agendado com `root.after(200, ...)` para dar 200ms ao loop asyncio para processar os cancelamentos antes do Tkinter fechar.
+- Thread do WebSocket armazenada em `self._ws_thread` para referência futura.
+
+### Fix 3 — Servidor Node.js: I/O Não-Bloqueante (`server/src/whatsapp.js`)
+
+**Problema:** O `setInterval` de 10 segundos usava `fs.writeFileSync()` para persistir os stores de chats e contatos em disco. Operação síncrona que bloqueia o Event Loop do Node.js durante a serialização JSON e a escrita — podendo causar latência nas mensagens WebSocket e perda de eventos do Baileys conforme os arquivos crescem.
+
+**Correção aplicada:**
+- `setInterval` refatorado para chamar uma função `async` (`persistStores`).
+- `fs.writeFileSync()` substituído por `await fs.promises.writeFile()` (não-bloqueante).
+- O Event Loop agora permanece livre para processar mensagens e conexões WS durante a persistência.
 
 ---
 **Fim das Especificações.**

@@ -3,6 +3,7 @@ from config_manager import CONFIG
 from PIL import Image
 import io
 import base64
+import datetime
 
 class ToastNotification(ctk.CTkToplevel):
     def __init__(self, master, sender, message, sticker_base64=None):
@@ -158,7 +159,7 @@ class ToastNotification(ctk.CTkToplevel):
             self.after(2000, self.force_on_top)
 
 class HistoryWindow(ctk.CTkToplevel):
-    def __init__(self, master, history_data=[], on_send_callback=None):
+    def __init__(self, master, history_data=None, on_send_callback=None):
         super().__init__(master)
         self.on_send_callback = on_send_callback
         
@@ -183,7 +184,7 @@ class HistoryWindow(ctk.CTkToplevel):
         self.wm_attributes("-transparentcolor", trans_color)
         self.configure(fg_color=trans_color)
         self.config(bg=trans_color)
-
+ 
         # Container Principal
         self.main_container = ctk.CTkFrame(
             self, 
@@ -198,10 +199,10 @@ class HistoryWindow(ctk.CTkToplevel):
         self.main_container.grid_rowconfigure(1, weight=1) # Conteúdo: expande totalmente
         self.main_container.grid_rowconfigure(2, weight=0) # Rodapé: tamanho fixo
         self.main_container.grid_columnconfigure(0, weight=1)
-
+ 
         # Barra de Título
-        self.title_bar = ctk.CTkFrame(self.main_container, fg_color="transparent", height=40)
-        self.title_bar.grid(row=0, column=0, sticky="ew", pady=(5, 0), padx=20)
+        self.title_bar = ctk.CTkFrame(self.main_container, fg_color="transparent", height=22)
+        self.title_bar.grid(row=0, column=0, sticky="ew", pady=(5, 5), padx=20)
         
         self.title_label = ctk.CTkLabel(
             self.title_bar, text="Histórico de Notificações",
@@ -209,38 +210,38 @@ class HistoryWindow(ctk.CTkToplevel):
             text_color="#1D1D1F"
         )
         self.title_label.place(relx=0.5, rely=0.5, anchor="center")
-
+ 
         # --- BOTÕES DE CONTROLE ESTILO MAC (DIREITA) ---
         self.btn_container = ctk.CTkFrame(self.title_bar, fg_color="transparent")
-        self.btn_container.pack(side="right", padx=0)
-
+        self.btn_container.place(relx=1.0, rely=0.5, anchor="e")
+ 
         # Botão Fechar (Vermelho)
         self.btn_close = ctk.CTkButton(
             self.btn_container, text="", width=12, height=12, corner_radius=6,
             fg_color="#FF5F57", hover_color="#E0443E", command=self.withdraw
         )
         self.btn_close.pack(side="right", padx=2)
-
+ 
         # Botão Maximizar (Verde)
         self.btn_max = ctk.CTkButton(
             self.btn_container, text="", width=12, height=12, corner_radius=6,
             fg_color="#28C840", hover_color="#1AAB2F", command=self.toggle_maximize
         )
         self.btn_max.pack(side="right", padx=2)
-
+ 
         # Botão Minimizar (Amarelo)
         self.btn_min = ctk.CTkButton(
             self.btn_container, text="", width=12, height=12, corner_radius=6,
             fg_color="#FEBC2E", hover_color="#D9A322", command=self.minimize
         )
         self.btn_min.pack(side="right", padx=2)
-
+ 
         self.is_maximized = False
-
+ 
         # --- BARRA DE RODAPÉ (Estilo Barra de Título) ---
-        self.bottom_bar = ctk.CTkFrame(self.main_container, fg_color="transparent", height=25)
-        self.bottom_bar.grid(row=2, column=0, sticky="ew", pady=(0, 5), padx=20)
-
+        self.bottom_bar = ctk.CTkFrame(self.main_container, fg_color="transparent", height=22)
+        self.bottom_bar.grid(row=2, column=0, sticky="ew", pady=(3, 7), padx=20)
+ 
         self.lbl_footer = ctk.CTkLabel(
             self.bottom_bar,
             text="W.A.N.D. - WhatsApp Notification Devices",
@@ -248,31 +249,48 @@ class HistoryWindow(ctk.CTkToplevel):
             text_color="#8E8E93"
         )
         self.lbl_footer.place(relx=0.5, rely=0.5, anchor="center")
-
+ 
         # Área de Scroll
         self.scrollable_frame = ctk.CTkScrollableFrame(
             self.main_container, fg_color="transparent", corner_radius=0
         )
         # sticky="nsew" faz ela grudar no teto do título e no chão do rodapé
         self.scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=0)
-
+ 
         # Container interno para as mensagens (fixado no topo)
         self.messages_container = ctk.CTkFrame(self.scrollable_frame, fg_color="transparent")
         self.messages_container.pack(fill="x", side="top")
-
+ 
         self.update_history(history_data)
-
+ 
         # Movimentação
         self.title_bar.bind("<ButtonPress-1>", self.start_move)
         self.title_bar.bind("<B1-Motion>", self.do_move)
         self.title_label.bind("<ButtonPress-1>", self.start_move)
         self.title_label.bind("<B1-Motion>", self.do_move)
-
+ 
     def update_history(self, data):
         self.current_data = data # Guarda os dados atuais para redimensionamento
         # Limpa APENAS as mensagens, sem quebrar a estrutura do scroll
         for widget in self.messages_container.winfo_children():
             widget.destroy()
+            
+        if data is None:
+            # Estado Premium de Carregamento
+            lbl_loading = ctk.CTkLabel(
+                self.messages_container, text="Carregando mensagens...",
+                font=ctk.CTkFont(family="Segoe UI Variable Text", size=14, weight="bold"),
+                text_color="#007AFF"
+            )
+            lbl_loading.pack(pady=(60, 5))
+            
+            lbl_loading_sub = ctk.CTkLabel(
+                self.messages_container, text="Sincronizando com o servidor W.A.N.D.",
+                font=ctk.CTkFont(family="Segoe UI Variable Text", size=11),
+                text_color="#8E8E93"
+            )
+            lbl_loading_sub.pack(pady=(0, 20))
+            return
             
         if not data:
             lbl_empty = ctk.CTkLabel(
@@ -337,14 +355,16 @@ class HistoryWindow(ctk.CTkToplevel):
             text_color="#3A3A3C", 
             justify="left"
         )
-        # Quebra de linha dinâmica baseada na largura da janela
-        lbl_text.configure(wraplength=self.winfo_width() - 80)
+        # Quebra de linha dinâmica segura baseada na largura da janela
+        width = self.winfo_width()
+        if width < 100:
+            width = 450  # Largura padrão caso a janela não esteja mapeada
+        lbl_text.configure(wraplength=width - 80)
         lbl_text.pack(anchor="w", padx=15, pady=(5, 10))
         if not is_reply_mode: lbl_text.bind("<Button-1>", lambda e: self.show_reply_view(msg))
 
         # Formatação simples da data (se disponível)
         ts = msg.get("timestamp", 0)
-        import datetime
         time_str = datetime.datetime.fromtimestamp(ts/1000).strftime("%H:%M") if ts else "--:--"
         
         lbl_time = ctk.CTkLabel(
@@ -404,9 +424,8 @@ class HistoryWindow(ctk.CTkToplevel):
         """Volta para a visualização de lista"""
         if hasattr(self, 'reply_view'):
             self.reply_view.destroy()
-        # Restaura o scroll com os parâmetros completos para evitar perda de alinhamento
-        self.scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=0) 
-        self.update_history(self.current_data)
+        # Restaura o scroll exibindo a lista original intacta que estava apenas oculta
+        self.scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=0)
 
     def handle_send(self, msg):
         """Coleta o texto e dispara o callback de envio"""

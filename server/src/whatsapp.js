@@ -9,7 +9,7 @@ import pino from 'pino';
 import { broadcast } from './websocket.js';
 import { updateTrayStatus } from './tray.js';
 import { processSticker } from './mediaHandler.js';
-import { saveMessage, setChatMutedStatus, isChatMutedInDB } from './database.js';
+import { saveMessage, setChatMutedStatus, isChatMutedInDB, saveContact, getContact } from './database.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -131,18 +131,22 @@ try {
   console.error('[WhatsApp] Erro ao ler contatos locais:', e.message);
 }
 
-// Salvar a cada 10s se houver alterações
-setInterval(() => {
+// Persiste o store a cada 10s usando operações NÃO-BLOQUEANTES (fs.promises).
+// O writeFileSync anterior bloqueava o Event Loop do Node.js durante a serialização
+// e a escrita em disco, o que causava latência nas mensagens e nas conexões WS.
+const persistStores = async () => {
   try {
     const dataChats = Object.fromEntries(chats);
-    fs.writeFileSync(storePath, JSON.stringify(dataChats));
+    await fs.promises.writeFile(storePath, JSON.stringify(dataChats), 'utf-8');
 
     const dataContacts = Object.fromEntries(contacts);
-    fs.writeFileSync(contactsPath, JSON.stringify(dataContacts));
+    await fs.promises.writeFile(contactsPath, JSON.stringify(dataContacts), 'utf-8');
   } catch (e) {
     console.error('[WhatsApp] Erro ao salvar stores locais:', e.message);
   }
-}, 10_000);
+};
+
+setInterval(persistStores, 10_000);
 
 /**
  * Formata um JID numérico em máscara elegante: +55 (XX) XXXXX-XXXX
@@ -163,9 +167,9 @@ function formatPhoneNumber(jid) {
 }
 
 /**
- * Resolve o nome do remetente com base na Esteira de Resolução (Fase 3.1)
+ * Resolve o nome do remetente com base na Esteira de Resolução e resolução de LID (Fases 3.1 & 3.2)
  */
-function resolveSenderName(msg) {
+async function resolveSenderName(msg) {
   const isMe = msg.key.fromMe;
   if (isMe) {
     return 'Você';
@@ -176,11 +180,47 @@ function resolveSenderName(msg) {
     return 'Desconhecido';
   }
 
-  // 1. Agenda Local (store.contacts/contacts Map)
-  const contact = contacts.get(senderJid);
+  // 0. Resolução de LID (@lid): tenta converter o JID do LID para o JID do telefone (PN)
+  let pnJid = null;
+  if (senderJid.endsWith('@lid')) {
+    try {
+      if (sock && sock.signalRepository && sock.signalRepository.lidMapping) {
+        pnJid = await sock.signalRepository.lidMapping.getPNForLID(senderJid);
+      }
+    } catch (err) {
+      console.warn(`[WhatsApp LID] Falha ao consultar PN JID do LID ${senderJid}:`, err.message);
+    }
+  }
+
+  // 1. Agenda Local (com fallback de JID para PN ou LID)
+  let contact = contacts.get(senderJid) || (pnJid ? contacts.get(pnJid) : null);
+  if (!contact) {
+    // Busca no SQLite
+    contact = await getContact(senderJid) || (pnJid ? await getContact(pnJid) : null);
+    if (contact) {
+      // Alimenta a memória cache local para futuras consultas rápidas
+      contacts.set(contact.jid, {
+        id: contact.jid,
+        name: contact.name,
+        verifiedName: contact.verifiedName,
+        displayName: contact.displayName
+      });
+    }
+  }
+
   if (contact) {
     const name = contact.name || contact.verifiedName || contact.displayName;
     if (name) return name;
+  }
+
+  // Proativamente salva pushName no banco de dados e memória caso seja um contato novo
+  if (msg.pushName && !contacts.has(senderJid)) {
+    const newContact = { id: senderJid, displayName: msg.pushName };
+    contacts.set(senderJid, newContact);
+    saveContact({
+      jid: senderJid,
+      displayName: msg.pushName
+    }).catch(err => console.error('[WhatsApp DB] Falha ao auto-salvar pushName:', err.message));
   }
 
   // 2. Nome de Perfil (pushName)
@@ -188,8 +228,9 @@ function resolveSenderName(msg) {
     return msg.pushName;
   }
 
-  // 3. Máscara Telefônica
-  return formatPhoneNumber(senderJid);
+  // 3. Máscara Telefônica (se resolveu PN JID, usa a máscara dele; caso contrário, do LID)
+  const jidToFormat = pnJid || senderJid;
+  return formatPhoneNumber(jidToFormat);
 }
 
 // Trava de conexão para evitar múltiplas instâncias
@@ -278,6 +319,12 @@ export async function connectToWhatsApp() {
       if (history.contacts) {
         for (const contact of history.contacts) {
           contacts.set(contact.id, contact);
+          await saveContact({
+            jid: contact.id,
+            name: contact.name,
+            verifiedName: contact.verifiedName,
+            displayName: contact.displayName
+          });
         }
       }
       if (history.chats) {
@@ -323,16 +370,29 @@ export async function connectToWhatsApp() {
       }
     });
 
-    sock.ev.on('contacts.upsert', (newContacts) => {
+    sock.ev.on('contacts.upsert', async (newContacts) => {
       for (const contact of newContacts) {
         contacts.set(contact.id, contact);
+        await saveContact({
+          jid: contact.id,
+          name: contact.name,
+          verifiedName: contact.verifiedName,
+          displayName: contact.displayName
+        });
       }
     });
 
-    sock.ev.on('contacts.update', (updates) => {
+    sock.ev.on('contacts.update', async (updates) => {
       for (const update of updates) {
         const contact = contacts.get(update.id) || {};
-        contacts.set(update.id, { ...contact, ...update });
+        const merged = { ...contact, ...update };
+        contacts.set(update.id, merged);
+        await saveContact({
+          jid: update.id,
+          name: merged.name,
+          verifiedName: merged.verifiedName,
+          displayName: merged.displayName
+        });
       }
     });
 
@@ -404,9 +464,24 @@ export async function connectToWhatsApp() {
 
           if (!text) continue;
 
-          const sender = resolveSenderName(msg);
+          const sender = await resolveSenderName(msg);
 
-          console.log(`[WhatsApp] ${sender}: ${text} ${stickerBase64 ? '(com preview)' : ''}`);
+          // Determina o JID do remetente e resolve o número de telefone (PN) em caso de @lid
+          const senderJid = msg.key.participant || msg.participant || msg.key.remoteJid;
+          let pnJidForNumber = null;
+          if (senderJid && senderJid.endsWith('@lid')) {
+            try {
+              if (sock && sock.signalRepository && sock.signalRepository.lidMapping) {
+                pnJidForNumber = await sock.signalRepository.lidMapping.getPNForLID(senderJid);
+              }
+            } catch (err) {
+              // Silencioso
+            }
+          }
+          const rawSenderNumber = pnJidForNumber || senderJid || '';
+          const senderNumber = formatPhoneNumber(rawSenderNumber);
+
+          console.log(`[WhatsApp] ${sender} (${senderNumber}): ${text} ${stickerBase64 ? '(com preview)' : ''}`);
 
           // Salva no Banco de Dados (Persistência)
           await saveMessage({
@@ -424,7 +499,9 @@ export async function connectToWhatsApp() {
               text: text,
               sticker: stickerBase64,
               timestamp: Date.now(),
-              remoteJid: msg.key.remoteJid
+              remoteJid: msg.key.remoteJid,
+              senderName: sender,
+              senderNumber: senderNumber
             }
           });
         }
