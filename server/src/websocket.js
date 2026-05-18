@@ -113,6 +113,9 @@ export function setupWebSocket(server) {
                 }
               }
 
+              const selfJid = sock && sock.user ? sanitizeJid(sock.user.id) : null;
+              const isSelfChat = selfJid && (unifiedJid === selfJid || chat.remoteJid === selfJid);
+
               // Busca o contato na agenda local usando tanto o JID da conversa quanto o PN resolvido
               let contact = null;
               if (contacts) {
@@ -145,7 +148,9 @@ export function setupWebSocket(server) {
 
               // Se o contato não está na agenda, tenta usar os fallbacks de pushName públicos
               if (!displayName) {
-                if (isGroup) {
+                if (isSelfChat) {
+                  displayName = myName || 'Você';
+                } else if (isGroup) {
                   displayName = chat.lastSenderName || chat.remoteJid;
                 } else {
                   // 1. pushName público de quem enviou a última mensagem recebida
@@ -300,7 +305,7 @@ export function setupWebSocket(server) {
             const contacts = await getAllContacts();
             
             const cleanContacts = contacts
-              .filter(c => c.jid && !c.jid.includes(':'))
+              .filter(c => c.jid && !c.jid.includes(':') && !c.jid.endsWith('@lid'))
               .map(c => {
                 const displayName = c.name || c.verifiedName || c.displayName || (formatPhoneNumber ? formatPhoneNumber(c.jid) : c.jid);
                 return {

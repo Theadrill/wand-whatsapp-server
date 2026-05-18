@@ -212,13 +212,26 @@ export function formatPhoneNumber(jid) {
 }
 
 export function getMyName() {
-  if (sock && sock.user) {
-    if (sock.user.name) return sock.user.name;
+  if (sock) {
+    // 1. Tenta pegar do sock.user.name ou sock.user.pushName
+    if (sock.user) {
+      if (sock.user.name) return sock.user.name;
+      if (sock.user.pushName) return sock.user.pushName;
+    }
     
-    const selfJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-    const selfContact = contacts.get(selfJid);
-    if (selfContact && (selfContact.name || selfContact.verifiedName || selfContact.displayName)) {
-      return selfContact.name || selfContact.verifiedName || selfContact.displayName;
+    // 2. Tenta pegar das credenciais do authState do Baileys
+    if (sock.authState && sock.authState.creds && sock.authState.creds.me) {
+      if (sock.authState.creds.me.name) return sock.authState.creds.me.name;
+      if (sock.authState.creds.me.notify) return sock.authState.creds.me.notify;
+    }
+
+    // 3. Tenta pegar do cache em memória usando o selfJid
+    if (sock.user) {
+      const selfJid = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+      const selfContact = contacts.get(selfJid);
+      if (selfContact && (selfContact.name || selfContact.verifiedName || selfContact.displayName)) {
+        return selfContact.name || selfContact.verifiedName || selfContact.displayName;
+      }
     }
   }
   return 'Você';

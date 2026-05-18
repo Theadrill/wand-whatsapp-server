@@ -130,7 +130,17 @@ class WANDClient:
         self.history_window.lift()
 
         # Agenda a requisição de dados apenas ao abrir a janela inicialmente
-        self.root.after(50, self._request_chats)
+        self.root.after(50, self._request_initial_data)
+
+    def _request_initial_data(self):
+        """Envia o pedido inicial de lista de chats e histórico do dashboard."""
+        self._dispatch(
+            self.network.send_command("get_chats", {})
+        )
+        if not self.selected_jid:
+            self._dispatch(
+                self.network.send_command("get_history", {"limit": 50})
+            )
 
     def _request_chats(self):
         """Envia o pedido de lista de chats ao servidor via WebSocket."""
@@ -210,7 +220,13 @@ class WANDClient:
                     data = msg_data.get("data", {})
                     jid = data.get("jid")
                     messages = data.get("messages", [])
-                    if self.history_window and self.history_window.winfo_exists() and self.selected_jid == jid:
+                    
+                    def clean_jid(j):
+                        if not j or not isinstance(j, str):
+                            return j
+                        return j.split(":")[0] + "@" + j.split("@")[-1] if ":" in j else j
+                        
+                    if self.history_window and self.history_window.winfo_exists() and clean_jid(self.selected_jid) == clean_jid(jid):
                         self.history_window.update_chat_messages(jid, messages)
 
                 elif msg_type == "history":

@@ -168,8 +168,11 @@ class HistoryWindow(ctk.CTkToplevel):
         self.selected_jid = None
         self.chats = []
         self.contacts = []
+        self.all_chats = []
+        self.all_contacts = []
         self.contacts_expanded = False
         self.chat_cards = {}
+        self.search_debounce_timer = None
         
         # Configurações da Janela
         self.title("W.A.N.D. - Histórico de Mensagens")
@@ -285,7 +288,18 @@ class HistoryWindow(ctk.CTkToplevel):
             height=28, corner_radius=8, cursor="hand2",
             command=self.reset_to_dashboard
         )
-        self.btn_dashboard.pack(fill="x", padx=15, pady=(2, 8))
+        self.btn_dashboard.pack(fill="x", padx=15, pady=(2, 6))
+        
+        # Barra de Busca Premium
+        self.search_var = ctk.StringVar()
+        self.search_entry = ctk.CTkEntry(
+            self.sidebar_frame, textvariable=self.search_var,
+            placeholder_text="🔍 Buscar...",
+            height=28, corner_radius=8, border_width=1,
+            fg_color="#FFFFFF", text_color="#000000", placeholder_text_color="#8E8E93"
+        )
+        self.search_entry.pack(fill="x", padx=15, pady=(2, 8))
+        self.search_var.trace_add("write", lambda *args: self.on_search_change())
         
         self.sidebar_scroll = ctk.CTkScrollableFrame(self.sidebar_frame, fg_color="transparent", corner_radius=0)
         self.sidebar_scroll.pack(fill="both", expand=True, padx=2, pady=(0, 5))
@@ -420,18 +434,27 @@ class HistoryWindow(ctk.CTkToplevel):
         import time
         t0 = time.perf_counter()
         
-        self.chats = chats_list
+        self.all_chats = chats_list
         self.ensure_containers_exist()
+        
+        # Filtra localmente se houver busca
+        q = self.search_var.get().strip().lower() if hasattr(self, 'search_var') else ""
+        if q:
+            filtered_chats = [c for c in chats_list if q in c.get("name", "").lower() or q in c.get("lastMessage", {}).get("text", "").lower()]
+        else:
+            filtered_chats = chats_list
+            
+        self.chats = filtered_chats
         
         # Limpa apenas os widgets dentro do container de chats
         for widget in self.chats_container.winfo_children():
             widget.destroy()
             
-        # Limpa do self.chat_cards apenas os JIDs que pertencem às conversas ativas
-        active_jids = {chat.get("jid") for chat in chats_list}
+        # Limpa do self.chat_cards apenas os JIDs que pertencem às conversas ativas filtradas
+        active_jids = {chat.get("jid") for chat in filtered_chats}
         self.chat_cards = {jid: card for jid, card in self.chat_cards.items() if jid not in active_jids}
         
-        if not chats_list:
+        if not filtered_chats:
             lbl_empty = ctk.CTkLabel(
                 self.chats_container, text="Nenhuma conversa ativa",
                 font=ctk.CTkFont(size=11), text_color="#8E8E93"
@@ -440,7 +463,7 @@ class HistoryWindow(ctk.CTkToplevel):
             print(f"[UI DEBUG] Chats vazios renderizados em {(time.perf_counter() - t0)*1000:.2f}ms")
             return
             
-        for chat in chats_list:
+        for chat in filtered_chats:
             jid = chat.get("jid")
             name = chat.get("name", "Desconhecido")
             last_msg = chat.get("lastMessage", {})
@@ -494,24 +517,33 @@ class HistoryWindow(ctk.CTkToplevel):
             self.chat_cards[jid] = card
             
         print(f"[UI DEBUG] Chats atualizados com sucesso em {(time.perf_counter() - t0)*1000:.2f}ms")
-
+ 
     def update_contacts_list(self, contacts_list):
         """Atualiza o container de contatos sincronizados na sidebar (limite de 50 para performance)."""
         import time
         t0 = time.perf_counter()
         
-        self.contacts = contacts_list
+        self.all_contacts = contacts_list
         self.ensure_containers_exist()
+        
+        # Filtra localmente se houver busca
+        q = self.search_var.get().strip().lower() if hasattr(self, 'search_var') else ""
+        if q:
+            filtered_contacts = [c for c in contacts_list if q in c.get("name", "").lower()]
+        else:
+            filtered_contacts = contacts_list
+            
+        self.contacts = filtered_contacts
         
         # Limpa apenas os widgets do container de contatos
         for widget in self.contacts_container.winfo_children():
             widget.destroy()
             
-        # Limpa do self.chat_cards apenas os JIDs que pertencem aos contatos sincronizados
-        contact_jids = {c.get("jid") for c in contacts_list}
+        # Limpa do self.chat_cards apenas os JIDs que pertencem aos contatos sincronizados filtrados
+        contact_jids = {c.get("jid") for c in filtered_contacts}
         self.chat_cards = {jid: card for jid, card in self.chat_cards.items() if jid not in contact_jids}
         
-        if not contacts_list:
+        if not filtered_contacts:
             lbl_no_contacts = ctk.CTkLabel(
                 self.contacts_container, text="Nenhum contato encontrado",
                 font=ctk.CTkFont(size=11), text_color="#8E8E93"
@@ -519,10 +551,10 @@ class HistoryWindow(ctk.CTkToplevel):
             lbl_no_contacts.pack(pady=10)
             print(f"[UI DEBUG] Contatos vazios renderizados em {(time.perf_counter() - t0)*1000:.2f}ms")
             return
-
+ 
         # Limita a exibição a 50 contatos para manter performance 60 FPS fluida
         max_display = 50
-        displayed_contacts = contacts_list[:max_display]
+        displayed_contacts = filtered_contacts[:max_display]
         
         for contact in displayed_contacts:
             jid = contact.get("jid")
@@ -567,12 +599,12 @@ class HistoryWindow(ctk.CTkToplevel):
             self.bind_click_to_widget(lbl_name, jid)
             
             self.chat_cards[jid] = card
-
+ 
         # Se houver mais contatos, adiciona um aviso premium e amigável no final da lista
-        if len(contacts_list) > max_display:
+        if len(filtered_contacts) > max_display:
             lbl_more = ctk.CTkLabel(
                 self.contacts_container, 
-                text=f"Mostrando 50 de {len(contacts_list)} contatos.\nUse a busca para filtrar.",
+                text=f"Mostrando 50 de {len(filtered_contacts)} contatos.\nUse a busca para filtrar.",
                 font=ctk.CTkFont(family="Segoe UI Variable Text", size=10, weight="bold"), 
                 text_color="#8E8E93",
                 justify="center"
@@ -580,7 +612,7 @@ class HistoryWindow(ctk.CTkToplevel):
             lbl_more.pack(pady=10)
             
         print(f"[UI DEBUG] Contatos atualizados em {(time.perf_counter() - t0)*1000:.2f}ms")
-
+ 
     def toggle_contacts(self):
         """Expande ou recolhe a seção de contatos instantaneamente (0ms) usando pack_forget/pack."""
         import time
@@ -608,6 +640,26 @@ class HistoryWindow(ctk.CTkToplevel):
             self.contacts_container.pack_forget()
             
         print(f"[UI DEBUG] Contatos toggled em {(time.perf_counter() - t0)*1000:.2f}ms")
+ 
+    def filter_sidebar(self):
+        """Filtra instantaneamente (local) as conversas e contatos ativos com base na busca."""
+        if hasattr(self, 'all_chats'):
+            self.update_chats_list(self.all_chats)
+        if hasattr(self, 'all_contacts'):
+            self.update_contacts_list(self.all_contacts)
+
+    def on_search_change(self):
+        """Gerencia o debounce do campo de busca para evitar renderizações excessivas."""
+        if hasattr(self, 'search_debounce_timer') and self.search_debounce_timer is not None:
+            self.after_cancel(self.search_debounce_timer)
+            self.search_debounce_timer = None
+            
+        # Se a busca estiver vazia, remove o filtro instantaneamente (0ms) para máxima fluidez
+        q = self.search_var.get().strip()
+        if not q:
+            self.filter_sidebar()
+        else:
+            self.search_debounce_timer = self.after(800, self.filter_sidebar)
 
     def select_chat(self, jid):
         """Seleciona um contato da sidebar, mudando o destaque visual e invocando a callback."""
@@ -620,13 +672,16 @@ class HistoryWindow(ctk.CTkToplevel):
         # Atualiza título do cabeçalho
         chat_name = "Conversa"
         found = False
-        for chat in self.chats:
+        chats_to_search = getattr(self, 'all_chats', self.chats)
+        contacts_to_search = getattr(self, 'all_contacts', self.contacts)
+        
+        for chat in chats_to_search:
             if chat.get("jid") == jid:
                 chat_name = chat.get("name", "Conversa")
                 found = True
                 break
         if not found:
-            for contact in self.contacts:
+            for contact in contacts_to_search:
                 if contact.get("jid") == jid:
                     chat_name = contact.get("name", "Conversa")
                     break
@@ -637,25 +692,61 @@ class HistoryWindow(ctk.CTkToplevel):
         self.entry_message.delete(0, "end")
         self.entry_message.focus_set()
         
-        # Atualiza destaque dos cards na barra lateral
-        for card_jid, card in self.chat_cards.items():
-            if card_jid == jid:
-                card.configure(fg_color="#D1D1D6", border_color="#007AFF")
-            else:
-                card.configure(fg_color="#FFFFFF", border_color="#E5E5EA")
+        # Normalização robusta de JID para comparação (ignora sufixos de dispositivo como :1, :2)
+        def clean_jid(j):
+            if not j or not isinstance(j, str):
+                return j
+            return j.split(":")[0] + "@" + j.split("@")[-1] if ":" in j else j
+            
+        cleaned_target = clean_jid(jid)
+        
+        # Atualiza destaque dos cards na barra lateral com proteção robusta contra widgets destruídos
+        jids_to_remove = []
+        for card_jid, card in list(self.chat_cards.items()):
+            try:
+                if card.winfo_exists():
+                    if clean_jid(card_jid) == cleaned_target:
+                        card.configure(fg_color="#D1D1D6", border_color="#007AFF")
+                    else:
+                        card.configure(fg_color="#FFFFFF", border_color="#E5E5EA")
+                else:
+                    jids_to_remove.append(card_jid)
+            except Exception:
+                jids_to_remove.append(card_jid)
+                
+        for dead_jid in jids_to_remove:
+            self.chat_cards.pop(dead_jid, None)
                 
         # Aciona callback
         if self.on_chat_selected_callback:
             self.on_chat_selected_callback(jid)
-
+ 
     def reset_to_dashboard(self):
         """Reseta a visualização para a tela de mensagens recentes (Dashboard)."""
         self.selected_jid = None
         self.show_loading_screen()
         
-        # Limpa o destaque de todos os cards
-        for card_jid, card in self.chat_cards.items():
-            card.configure(fg_color="#FFFFFF", border_color="#E5E5EA")
+        # Cancela qualquer timer de busca ativo
+        if hasattr(self, 'search_debounce_timer') and self.search_debounce_timer is not None:
+            self.after_cancel(self.search_debounce_timer)
+            self.search_debounce_timer = None
+            
+        # Limpa a busca ao voltar para o dashboard
+        if hasattr(self, 'search_var'):
+            self.search_var.set("")
+            
+        # Limpa o destaque de todos os cards com proteção robusta contra widgets destruídos
+        jids_to_remove = []
+        for card_jid, card in list(self.chat_cards.items()):
+            try:
+                if card.winfo_exists():
+                    card.configure(fg_color="#FFFFFF", border_color="#E5E5EA")
+                else:
+                    jids_to_remove.append(card_jid)
+            except Exception:
+                jids_to_remove.append(card_jid)
+        for dead_jid in jids_to_remove:
+            self.chat_cards.pop(dead_jid, None)
             
         # Aciona callback com None para carregar o histórico recente
         if self.on_chat_selected_callback:
@@ -663,7 +754,12 @@ class HistoryWindow(ctk.CTkToplevel):
 
     def update_chat_messages(self, jid, messages):
         """Renderiza a lista de mensagens no corpo do chat."""
-        if self.selected_jid != jid:
+        def clean_jid(j):
+            if not j or not isinstance(j, str):
+                return j
+            return j.split(":")[0] + "@" + j.split("@")[-1] if ":" in j else j
+            
+        if clean_jid(self.selected_jid) != clean_jid(jid):
             return
             
         # Reseta a barra de rolagem para o topo e zera a scrollregion antes de limpar os widgets,
@@ -676,7 +772,7 @@ class HistoryWindow(ctk.CTkToplevel):
             
         if not messages:
             lbl_empty = ctk.CTkLabel(
-                self.messages_container, text="Nenhuma mensagem nesta conversa.",
+                self.messages_container, text="Esta é uma nova conversa. Digite para começar...",
                 font=ctk.CTkFont(size=12), text_color="#8E8E93"
             )
             lbl_empty.pack(pady=120)
@@ -771,11 +867,42 @@ class HistoryWindow(ctk.CTkToplevel):
         }
         
         children = self.messages_container.winfo_children()
-        if len(children) == 1 and isinstance(children[0], ctk.CTkLabel) and "Nenhuma mensagem" in children[0].cget("text"):
+        if len(children) == 1 and isinstance(children[0], ctk.CTkLabel) and ("Nenhuma mensagem" in children[0].cget("text") or "Esta é uma nova conversa" in children[0].cget("text")):
             children[0].destroy()
             
         self.create_message_balloon(local_msg)
         self.entry_message.delete(0, "end")
+        
+        # Verifica se o chat já está na lista de conversas ativas (self.chats) e insere dinamicamente se necessário
+        chats_to_search = getattr(self, 'all_chats', self.chats)
+        contacts_to_search = getattr(self, 'all_contacts', self.contacts)
+        
+        chat_exists = any(c.get("jid") == self.selected_jid for c in chats_to_search)
+        if not chat_exists:
+            contact_name = "Conversa"
+            for contact in contacts_to_search:
+                if contact.get("jid") == self.selected_jid:
+                    contact_name = contact.get("name", "Conversa")
+                    break
+            
+            new_chat = {
+                "jid": self.selected_jid,
+                "name": contact_name,
+                "unreadCount": 0,
+                "lastMessage": {
+                    "text": text,
+                    "timestamp": int(datetime.datetime.now().timestamp() * 1000),
+                    "fromMe": True,
+                    "senderName": "Você"
+                }
+            }
+            if hasattr(self, 'all_chats'):
+                # Garante que seja inserido no topo da lista unfiltered também
+                if not any(c.get("jid") == self.selected_jid for c in self.all_chats):
+                    self.all_chats.insert(0, new_chat)
+            self.chats.insert(0, new_chat)
+            self.update_chats_list(getattr(self, 'all_chats', self.chats))
+            
         self.update_idletasks()
         self.messages_scroll._parent_canvas.yview_moveto(1.0)
 
@@ -784,7 +911,16 @@ class HistoryWindow(ctk.CTkToplevel):
         remote_jid = data.get("remoteJid", "")
         alternate_jid = data.get("alternateJid", "")
         
-        if self.selected_jid == remote_jid or (alternate_jid and self.selected_jid == alternate_jid):
+        def clean_jid(j):
+            if not j or not isinstance(j, str):
+                return j
+            return j.split(":")[0] + "@" + j.split("@")[-1] if ":" in j else j
+            
+        c_sel = clean_jid(self.selected_jid)
+        c_rem = clean_jid(remote_jid)
+        c_alt = clean_jid(alternate_jid) if alternate_jid else ""
+        
+        if c_sel == c_rem or (c_alt and c_sel == c_alt):
             from_me = data.get("fromMe", False) or data.get("from") == "Você"
             
             # Se a mensagem for nossa, verifica se já foi desenhada pelo feedback instantâneo local
@@ -812,7 +948,7 @@ class HistoryWindow(ctk.CTkToplevel):
                                 return # Ignora a duplicação!
             
             children = self.messages_container.winfo_children()
-            if len(children) == 1 and isinstance(children[0], ctk.CTkLabel) and "Nenhuma mensagem" in children[0].cget("text"):
+            if len(children) == 1 and isinstance(children[0], ctk.CTkLabel) and ("Nenhuma mensagem" in children[0].cget("text") or "Esta é uma nova conversa" in children[0].cget("text")):
                 children[0].destroy()
                 
             self.create_message_balloon({
