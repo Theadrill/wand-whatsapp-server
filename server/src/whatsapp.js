@@ -42,6 +42,22 @@ export const lidToPnMap = new Map();
 export const pnToLidMap = new Map();
 let contacts = new Map();
 
+/**
+ * Sanitiza JIDs removendo sufixos de dispositivo (:0, :1, etc.)
+ */
+export function sanitizeJid(jid) {
+  if (!jid || typeof jid !== 'string') return jid;
+  if (jid.includes(':')) {
+    const parts = jid.split('@');
+    if (parts.length === 2) {
+      const user = parts[0].split(':')[0];
+      const domain = parts[1];
+      return `${user}@${domain}`;
+    }
+  }
+  return jid;
+}
+
 // Propriedades seguras para persistência (evita salvar o conteúdo das mensagens)
 const SAFE_CHAT_PROPS = ['id', 'name', 'muteEndTime', 'unreadCount', 'lastMsgTimestamp'];
 
@@ -181,7 +197,8 @@ setInterval(persistStores, 10_000);
  */
 export function formatPhoneNumber(jid) {
   if (!jid) return '';
-  const num = jid.split('@')[0];
+  const sanitized = sanitizeJid(jid);
+  const num = sanitized.split('@')[0];
   if (num.startsWith('55') && (num.length === 12 || num.length === 13)) {
     const ddd = num.substring(2, 4);
     const rest = num.substring(4);
@@ -216,7 +233,7 @@ async function resolveSenderName(msg) {
     return 'Você';
   }
 
-  const senderJid = msg.key.participant || msg.participant || msg.key.remoteJid;
+  const senderJid = sanitizeJid(msg.key.participant || msg.participant || msg.key.remoteJid);
   if (!senderJid) {
     return 'Desconhecido';
   }
@@ -226,7 +243,10 @@ async function resolveSenderName(msg) {
   if (senderJid.endsWith('@lid')) {
     try {
       if (sock && sock.signalRepository && sock.signalRepository.lidMapping) {
-        pnJid = await sock.signalRepository.lidMapping.getPNForLID(senderJid);
+        const resolved = await sock.signalRepository.lidMapping.getPNForLID(senderJid);
+        if (resolved) {
+          pnJid = sanitizeJid(resolved);
+        }
       }
     } catch (err) {
       console.warn(`[WhatsApp LID] Falha ao consultar PN JID do LID ${senderJid}:`, err.message);
@@ -337,6 +357,17 @@ export async function connectToWhatsApp() {
         isConnecting = false;
         updateTrayStatus(true);
         console.log('[WhatsApp] WAND Server está ONLINE!');
+
+        if (sock.user) {
+          const selfPn = sanitizeJid(sock.user.id);
+          const selfLid = sock.user.lid ? sanitizeJid(sock.user.lid) : null;
+          if (selfLid) {
+            lidToPnMap.set(selfLid, selfPn);
+            pnToLidMap.set(selfPn, selfLid);
+            console.log(`[WhatsApp] Auto-mapeamento próprio registrado: LID ${selfLid} -> PN ${selfPn}`);
+          }
+        }
+
         broadcast({ type: 'status', data: 'connected' });
 
         // Teste de Envio: Aguarda 10 segundos para garantir sincronização total
@@ -397,19 +428,20 @@ export async function connectToWhatsApp() {
 
     sock.ev.on('chats.upsert', async (newChats) => {
       for (const chat of newChats) {
-        const oldChat = chats.get(chat.id) || {};
+        const cleanId = sanitizeJid(chat.id);
+        const oldChat = chats.get(cleanId) || {};
         const merged = mergeChat(oldChat, chat);
-        chats.set(chat.id, sanitizeChat(merged));
+        chats.set(cleanId, sanitizeChat(merged));
         
         const isMuted = isChatMuted(merged);
         if (isMuted) {
-          console.log(`[WhatsApp Sync] Chat silenciado detectado no UPSERT: ${chat.id}`);
+          console.log(`[WhatsApp Sync] Chat silenciado detectado no UPSERT: ${cleanId}`);
         }
-        await setChatMutedStatus(chat.id, isMuted);
+        await setChatMutedStatus(cleanId, isMuted);
         
         if (chat.name) {
           await saveContact({
-            jid: chat.id,
+            jid: cleanId,
             name: chat.name
           }).catch(() => {});
         }
@@ -418,19 +450,20 @@ export async function connectToWhatsApp() {
 
     sock.ev.on('chats.update', async (updates) => {
       for (const update of updates) {
-        const chat = chats.get(update.id) || {};
+        const cleanId = sanitizeJid(update.id);
+        const chat = chats.get(cleanId) || {};
         const merged = { ...chat, ...update };
-        chats.set(update.id, sanitizeChat(merged));
+        chats.set(cleanId, sanitizeChat(merged));
         
         if (update.muteEndTime !== undefined) {
           const isMuted = isChatMuted(merged);
-          console.log(`[WhatsApp Sync] ATUALIZAÇÃO DE SILÊNCIO: Chat ${update.id} teve muteEndTime atualizado para: ${update.muteEndTime}. Silenciado no DB? ${isMuted}`);
-          await setChatMutedStatus(update.id, isMuted);
+          console.log(`[WhatsApp Sync] ATUALIZAÇÃO DE SILÊNCIO: Chat ${cleanId} teve muteEndTime atualizado para: ${update.muteEndTime}. Silenciado no DB? ${isMuted}`);
+          await setChatMutedStatus(cleanId, isMuted);
         }
         
         if (merged.name) {
           await saveContact({
-            jid: update.id,
+            jid: cleanId,
             name: merged.name
           }).catch(() => {});
         }
@@ -439,22 +472,25 @@ export async function connectToWhatsApp() {
 
     sock.ev.on('contacts.upsert', async (newContacts) => {
       for (const contact of newContacts) {
-        contacts.set(contact.id, contact);
-        if (contact.lid && contact.id) {
-          lidToPnMap.set(contact.lid, contact.id);
-          pnToLidMap.set(contact.id, contact.lid);
+        const cleanId = sanitizeJid(contact.id);
+        const cleanLid = contact.lid ? sanitizeJid(contact.lid) : null;
+        
+        contacts.set(cleanId, { ...contact, id: cleanId, lid: cleanLid });
+        if (cleanLid && cleanId) {
+          lidToPnMap.set(cleanLid, cleanId);
+          pnToLidMap.set(cleanId, cleanLid);
         }
         await saveContact({
-          jid: contact.id,
+          jid: cleanId,
           name: contact.name,
           verifiedName: contact.verifiedName,
           displayName: contact.displayName
         });
 
         // Se o contato tiver um LID associado, salva também sob o JID do LID
-        if (contact.lid) {
+        if (cleanLid) {
           await saveContact({
-            jid: contact.lid,
+            jid: cleanLid,
             name: contact.name,
             verifiedName: contact.verifiedName,
             displayName: contact.displayName
@@ -465,24 +501,27 @@ export async function connectToWhatsApp() {
 
     sock.ev.on('contacts.update', async (updates) => {
       for (const update of updates) {
-        const contact = contacts.get(update.id) || {};
+        const cleanId = sanitizeJid(update.id);
+        const contact = contacts.get(cleanId) || {};
         const merged = { ...contact, ...update };
-        contacts.set(update.id, merged);
-        if (merged.lid && merged.id) {
-          lidToPnMap.set(merged.lid, merged.id);
-          pnToLidMap.set(merged.id, merged.lid);
+        const cleanLid = merged.lid ? sanitizeJid(merged.lid) : null;
+        
+        contacts.set(cleanId, { ...merged, id: cleanId, lid: cleanLid });
+        if (cleanLid && cleanId) {
+          lidToPnMap.set(cleanLid, cleanId);
+          pnToLidMap.set(cleanId, cleanLid);
         }
         await saveContact({
-          jid: update.id,
+          jid: cleanId,
           name: merged.name,
           verifiedName: merged.verifiedName,
           displayName: merged.displayName
         });
 
         // Se o contato tiver um LID associado, atualiza também sob o JID do LID
-        if (merged.lid) {
+        if (cleanLid) {
           await saveContact({
-            jid: merged.lid,
+            jid: cleanLid,
             name: merged.name,
             verifiedName: merged.verifiedName,
             displayName: merged.displayName
@@ -497,18 +536,20 @@ export async function connectToWhatsApp() {
       // Aceita notify (novas) e append (enviadas por mim/sync)
       if (m.type === 'notify' || m.type === 'append') {
         for (const msg of m.messages) {
+          if (!msg.key.remoteJid) continue;
+          const cleanRemoteJid = sanitizeJid(msg.key.remoteJid);
           const isMe = msg.key.fromMe;
 
           // Ignora mensagens de sincronização técnica de dispositivos secundários (JIDs contendo ":")
-          if (msg.key.remoteJid && msg.key.remoteJid.includes(':')) {
+          if (cleanRemoteJid.includes(':')) {
             continue;
           }
 
           // 0. Filtro de Chats Silenciados (MÁXIMA PRIORIDADE - Executa antes de tudo)
           if (config.filter_muted_chats) {
-            const isMuted = await isChatMutedInDB(msg.key.remoteJid);
+            const isMuted = await isChatMutedInDB(cleanRemoteJid);
             if (isMuted) {
-              console.log(`[WhatsApp] Ignorando mensagem de chat silenciado (Filtro DB): ${msg.key.remoteJid}`);
+              console.log(`[WhatsApp] Ignorando mensagem de chat silenciado (Filtro DB): ${cleanRemoteJid}`);
               continue;
             }
           }
@@ -522,9 +563,9 @@ export async function connectToWhatsApp() {
           if (isMe && !config.allow_self_messages) continue;
 
           // 2. Filtro de mensagens de grupos (opcional via config)
-          const isGroup = msg.key.remoteJid.endsWith('@g.us');
+          const isGroup = cleanRemoteJid.endsWith('@g.us');
           if (isGroup && !config.allow_groups_messages) {
-            console.log(`[WhatsApp] Ignorando mensagem de grupo: ${msg.key.remoteJid}`);
+            console.log(`[WhatsApp] Ignorando mensagem de grupo: ${cleanRemoteJid}`);
             continue;
           }
 
@@ -534,13 +575,13 @@ export async function connectToWhatsApp() {
             'status@broadcast',
             '@newsletter'
           ];
-          if (BLACKLIST.some(id => msg.key.remoteJid.includes(id))) continue;
+          if (BLACKLIST.some(id => cleanRemoteJid.includes(id))) continue;
 
           // 4. Filtro de Tempo (Evita "ghost messages" do histórico de sincronização)
           const now = Math.floor(Date.now() / 1000);
           const msgTime = msg.messageTimestamp;
           if (msgTime && (now - msgTime > 60)) {
-            console.log(`[WhatsApp] Ignorando mensagem antiga de sync: ${msg.key.remoteJid}`);
+            console.log(`[WhatsApp] Ignorando mensagem antiga de sync: ${cleanRemoteJid}`);
             continue;
           }
 
@@ -567,12 +608,15 @@ export async function connectToWhatsApp() {
           const sender = await resolveSenderName(msg);
 
           // Determina o JID do remetente e resolve o número de telefone (PN) em caso de @lid
-          const senderJid = msg.key.participant || msg.participant || msg.key.remoteJid;
+          const senderJid = sanitizeJid(msg.key.participant || msg.participant || cleanRemoteJid);
           let pnJidForNumber = null;
           if (senderJid && senderJid.endsWith('@lid')) {
             try {
               if (sock && sock.signalRepository && sock.signalRepository.lidMapping) {
-                pnJidForNumber = await sock.signalRepository.lidMapping.getPNForLID(senderJid);
+                const resolved = await sock.signalRepository.lidMapping.getPNForLID(senderJid);
+                if (resolved) {
+                  pnJidForNumber = sanitizeJid(resolved);
+                }
               }
             } catch (err) {
               // Silencioso
@@ -585,7 +629,7 @@ export async function connectToWhatsApp() {
 
           // Salva no Banco de Dados (Persistência)
           await saveMessage({
-            remoteJid: msg.key.remoteJid,
+            remoteJid: cleanRemoteJid,
             senderName: sender,
             text: text,
             timestamp: Date.now(),
@@ -593,7 +637,7 @@ export async function connectToWhatsApp() {
           });
 
           const myName = getMyName();
-          const contactName = await resolveSenderName({ key: { remoteJid: msg.key.remoteJid, fromMe: false } });
+          const contactName = await resolveSenderName({ key: { remoteJid: cleanRemoteJid, fromMe: false } });
           
           const groupSuffix = isGroup ? ' (Grupo)' : '';
 
@@ -611,13 +655,19 @@ export async function connectToWhatsApp() {
           }
 
           let alternateJid = null;
-          if (msg.key.remoteJid.endsWith('@lid') && sock && sock.signalRepository && sock.signalRepository.lidMapping) {
+          if (cleanRemoteJid.endsWith('@lid') && sock && sock.signalRepository && sock.signalRepository.lidMapping) {
             try {
-              alternateJid = await sock.signalRepository.lidMapping.getPNForLID(msg.key.remoteJid);
+              const resolved = await sock.signalRepository.lidMapping.getPNForLID(cleanRemoteJid);
+              if (resolved) {
+                alternateJid = sanitizeJid(resolved);
+              }
             } catch (err) {}
-          } else if (msg.key.remoteJid.endsWith('@s.whatsapp.net') && sock && sock.signalRepository && sock.signalRepository.lidMapping) {
+          } else if (cleanRemoteJid.endsWith('@s.whatsapp.net') && sock && sock.signalRepository && sock.signalRepository.lidMapping) {
             try {
-              alternateJid = await sock.signalRepository.lidMapping.getLIDForPN(msg.key.remoteJid);
+              const resolved = await sock.signalRepository.lidMapping.getLIDForPN(cleanRemoteJid);
+              if (resolved) {
+                alternateJid = sanitizeJid(resolved);
+              }
             } catch (err) {}
           }
 
@@ -629,7 +679,7 @@ export async function connectToWhatsApp() {
               fromMe: isMe,
               sticker: stickerBase64,
               timestamp: Date.now(),
-              remoteJid: msg.key.remoteJid,
+              remoteJid: cleanRemoteJid,
               alternateJid: alternateJid,
               senderName: senderName,
               receiverName: receiverName,

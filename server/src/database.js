@@ -9,6 +9,22 @@ const __dirname = path.dirname(__filename);
 let db;
 
 /**
+ * Helper interno para remover sufixos de dispositivo (:0, :1, etc.) de qualquer JID.
+ */
+function sanitizeJid(jid) {
+  if (!jid || typeof jid !== 'string') return jid;
+  if (jid.includes(':')) {
+    const parts = jid.split('@');
+    if (parts.length === 2) {
+      const user = parts[0].split(':')[0];
+      const domain = parts[1];
+      return `${user}@${domain}`;
+    }
+  }
+  return jid;
+}
+
+/**
  * Inicializa o banco de dados SQLite.
  * Cria a tabela de mensagens se ela não existir.
  */
@@ -55,6 +71,28 @@ export async function initDatabase() {
     )
   `);
 
+  // Migração legada: limpa JIDs contendo ":" das tabelas de forma proativa
+  try {
+    await db.run(`
+      UPDATE messages 
+      SET remoteJid = SUBSTR(remoteJid, 1, INSTR(remoteJid, ':') - 1) || '@' || SUBSTR(remoteJid, INSTR(remoteJid, '@') + 1) 
+      WHERE remoteJid LIKE '%:%@%'
+    `);
+    await db.run(`
+      UPDATE contacts 
+      SET jid = SUBSTR(jid, 1, INSTR(jid, ':') - 1) || '@' || SUBSTR(jid, INSTR(jid, '@') + 1) 
+      WHERE jid LIKE '%:%@%'
+    `);
+    await db.run(`
+      UPDATE muted_chats 
+      SET remoteJid = SUBSTR(remoteJid, 1, INSTR(remoteJid, ':') - 1) || '@' || SUBSTR(remoteJid, INSTR(remoteJid, '@') + 1) 
+      WHERE remoteJid LIKE '%:%@%'
+    `);
+    console.log('[DB] Migração de sanitização de JIDs legados concluída com sucesso.');
+  } catch (migError) {
+    console.error('[DB] Erro na migração de sanitização:', migError.message);
+  }
+
   console.log('[DB] Banco de dados inicializado em:', dbPath);
   return db;
 }
@@ -66,10 +104,11 @@ export async function initDatabase() {
 export async function saveMessage({ remoteJid, senderName, text, timestamp, fromMe }) {
   if (!db) await initDatabase();
   
+  const cleanJid = sanitizeJid(remoteJid);
   try {
     await db.run(
       'INSERT INTO messages (remoteJid, senderName, text, timestamp, fromMe) VALUES (?, ?, ?, ?, ?)',
-      [remoteJid, senderName, text, timestamp, fromMe ? 1 : 0]
+      [cleanJid, senderName, text, timestamp, fromMe ? 1 : 0]
     );
   } catch (error) {
     console.error('[DB] Erro ao salvar mensagem:', error);
@@ -106,11 +145,12 @@ export async function getHistory(limit = 50) {
  */
 export async function setChatMutedStatus(remoteJid, isMuted) {
   if (!db) await initDatabase();
+  const cleanJid = sanitizeJid(remoteJid);
   try {
     if (isMuted) {
-      await db.run('INSERT OR REPLACE INTO muted_chats (remoteJid) VALUES (?)', [remoteJid]);
+      await db.run('INSERT OR REPLACE INTO muted_chats (remoteJid) VALUES (?)', [cleanJid]);
     } else {
-      await db.run('DELETE FROM muted_chats WHERE remoteJid = ?', [remoteJid]);
+      await db.run('DELETE FROM muted_chats WHERE remoteJid = ?', [cleanJid]);
     }
   } catch (error) {
     console.error('[DB] Erro ao atualizar status de silêncio do chat:', error);
@@ -122,8 +162,9 @@ export async function setChatMutedStatus(remoteJid, isMuted) {
  */
 export async function isChatMutedInDB(remoteJid) {
   if (!db) await initDatabase();
+  const cleanJid = sanitizeJid(remoteJid);
   try {
-    const row = await db.get('SELECT 1 FROM muted_chats WHERE remoteJid = ?', [remoteJid]);
+    const row = await db.get('SELECT 1 FROM muted_chats WHERE remoteJid = ?', [cleanJid]);
     return !!row;
   } catch (error) {
     console.error('[DB] Erro ao verificar silêncio do chat no banco:', error);
@@ -136,10 +177,11 @@ export async function isChatMutedInDB(remoteJid) {
  */
 export async function saveContact({ jid, name, verifiedName, displayName }) {
   if (!db) await initDatabase();
+  const cleanJid = sanitizeJid(jid);
   try {
     await db.run(
       'INSERT OR REPLACE INTO contacts (jid, name, verifiedName, displayName) VALUES (?, ?, ?, ?)',
-      [jid, name, verifiedName, displayName]
+      [cleanJid, name, verifiedName, displayName]
     );
   } catch (error) {
     console.error('[DB] Erro ao salvar contato no banco:', error);
@@ -151,8 +193,9 @@ export async function saveContact({ jid, name, verifiedName, displayName }) {
  */
 export async function getContact(jid) {
   if (!db) await initDatabase();
+  const cleanJid = sanitizeJid(jid);
   try {
-    return await db.get('SELECT * FROM contacts WHERE jid = ?', [jid]);
+    return await db.get('SELECT * FROM contacts WHERE jid = ?', [cleanJid]);
   } catch (error) {
     console.error('[DB] Erro ao recuperar contato do banco:', error);
     return null;

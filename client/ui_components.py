@@ -666,9 +666,10 @@ class HistoryWindow(ctk.CTkToplevel):
         if self.selected_jid != jid:
             return
             
-        # Reseta a barra de rolagem para o topo antes de limpar os widgets,
-        # evitando coordenadas de scroll fantasmas e telas cinzas vazias
+        # Reseta a barra de rolagem para o topo e zera a scrollregion antes de limpar os widgets,
+        # evitando coordenadas de scroll fantasmas de conversas longas e telas cinzas vazias
         self.messages_scroll._parent_canvas.yview_moveto(0.0)
+        self.messages_scroll._parent_canvas.configure(scrollregion=(0, 0, 0, 0))
             
         for widget in self.messages_container.winfo_children():
             widget.destroy()
@@ -679,6 +680,8 @@ class HistoryWindow(ctk.CTkToplevel):
                 font=ctk.CTkFont(size=12), text_color="#8E8E93"
             )
             lbl_empty.pack(pady=120)
+            self.update_idletasks()
+            self.messages_scroll._parent_canvas.configure(scrollregion=self.messages_scroll._parent_canvas.bbox("all"))
             return
             
         for msg in messages:
@@ -686,8 +689,10 @@ class HistoryWindow(ctk.CTkToplevel):
             
         self.update_idletasks()
         
-        # Agendamento assíncrono de 50ms para dar tempo ao CustomTkinter de recalcular
-        # a scrollregion real baseada na nova altura e rolar com precisão para a base
+        # Força o recálculo imediato da scrollregion real baseada na nova altura das mensagens
+        self.messages_scroll._parent_canvas.configure(scrollregion=self.messages_scroll._parent_canvas.bbox("all"))
+        
+        # Agendamento assíncrono de 50ms para dar tempo ao CustomTkinter de atualizar a renderização física e rolar
         self.after(50, lambda: self.messages_scroll._parent_canvas.yview_moveto(1.0))
 
     def create_message_balloon(self, msg):
@@ -824,6 +829,9 @@ class HistoryWindow(ctk.CTkToplevel):
         if self.selected_jid is not None:
             return
             
+        self.messages_scroll._parent_canvas.yview_moveto(0.0)
+        self.messages_scroll._parent_canvas.configure(scrollregion=(0, 0, 0, 0))
+            
         for widget in self.messages_container.winfo_children():
             widget.destroy()
             
@@ -836,6 +844,8 @@ class HistoryWindow(ctk.CTkToplevel):
                 font=ctk.CTkFont(size=12), text_color="#8E8E93"
             )
             lbl_empty.pack(pady=120)
+            self.update_idletasks()
+            self.messages_scroll._parent_canvas.configure(scrollregion=self.messages_scroll._parent_canvas.bbox("all"))
             return
             
         # Renderiza a lista de mensagens recentes como cards clicáveis
@@ -843,6 +853,7 @@ class HistoryWindow(ctk.CTkToplevel):
             self.create_feed_card(msg)
             
         self.update_idletasks()
+        self.messages_scroll._parent_canvas.configure(scrollregion=self.messages_scroll._parent_canvas.bbox("all"))
         self.messages_scroll._parent_canvas.yview_moveto(0)
 
     def create_feed_card(self, msg):

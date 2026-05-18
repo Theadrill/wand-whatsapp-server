@@ -1,6 +1,6 @@
 import { WebSocketServer } from 'ws';
 import { getHistory, getChats, getChatHistory, getContact, getChatHistoryUnified, getAllContacts } from './database.js';
-import { sendMessage, getMyName, formatPhoneNumber, getSock, getContactsMemory } from './whatsapp.js';
+import { sendMessage, getMyName, formatPhoneNumber, getSock, getContactsMemory, sanitizeJid, lidToPnMap, pnToLidMap } from './whatsapp.js';
 
 let wss;
 const clients = new Set();
@@ -90,17 +90,26 @@ export function setupWebSocket(server) {
               if (chat.remoteJid.includes(':')) continue;
 
               // Determina o JID real unificado (preferencialmente PN)
-              let unifiedJid = chat.remoteJid;
+              let unifiedJid = sanitizeJid(chat.remoteJid);
               let pnJid = null;
               
-              if (chat.remoteJid.endsWith('@lid') && sock && sock.signalRepository && sock.signalRepository.lidMapping) {
-                try {
-                  pnJid = await sock.signalRepository.lidMapping.getPNForLID(chat.remoteJid);
-                  if (pnJid) {
-                    unifiedJid = pnJid;
+              if (unifiedJid.endsWith('@lid')) {
+                // Tenta buscar no mapa em memória primeiro
+                const inMemoryPn = lidToPnMap.get(unifiedJid);
+                if (inMemoryPn) {
+                  pnJid = inMemoryPn;
+                  unifiedJid = inMemoryPn;
+                } else if (sock && sock.signalRepository && sock.signalRepository.lidMapping) {
+                  try {
+                    const resolved = await sock.signalRepository.lidMapping.getPNForLID(unifiedJid);
+                    if (resolved) {
+                      pnJid = sanitizeJid(resolved);
+                      unifiedJid = pnJid;
+                      lidToPnMap.set(chat.remoteJid, pnJid);
+                    }
+                  } catch (err) {
+                    // Silencioso
                   }
-                } catch (err) {
-                  // Silencioso
                 }
               }
 
@@ -195,31 +204,51 @@ export function setupWebSocket(server) {
           }
         } else if (payload.type === 'get_chat_history') {
           try {
-            const { jid } = payload;
+            const cleanJid = sanitizeJid(payload.jid);
             const limit = payload.limit || 50;
             const sock = getSock ? getSock() : null;
 
             // Se for LID ou PN, resolve o JID alternativo para unificar o histórico
             let alternateJid = null;
-            if (jid.endsWith('@lid') && sock && sock.signalRepository && sock.signalRepository.lidMapping) {
-              try {
-                alternateJid = await sock.signalRepository.lidMapping.getPNForLID(jid);
-              } catch (err) {
-                // Silencioso
+            if (cleanJid.endsWith('@lid')) {
+              // Tenta buscar no mapa em memória primeiro
+              const inMemoryPn = lidToPnMap.get(cleanJid);
+              if (inMemoryPn) {
+                alternateJid = inMemoryPn;
+              } else if (sock && sock.signalRepository && sock.signalRepository.lidMapping) {
+                try {
+                  const resolved = await sock.signalRepository.lidMapping.getPNForLID(cleanJid);
+                  if (resolved) {
+                    alternateJid = sanitizeJid(resolved);
+                    lidToPnMap.set(cleanJid, alternateJid);
+                  }
+                } catch (err) {
+                  // Silencioso
+                }
               }
-            } else if (jid.endsWith('@s.whatsapp.net') && sock && sock.signalRepository && sock.signalRepository.lidMapping) {
-              try {
-                alternateJid = await sock.signalRepository.lidMapping.getLIDForPN(jid);
-              } catch (err) {
-                // Silencioso
+            } else if (cleanJid.endsWith('@s.whatsapp.net')) {
+              // Tenta buscar no mapa em memória primeiro
+              const inMemoryLid = pnToLidMap.get(cleanJid);
+              if (inMemoryLid) {
+                alternateJid = inMemoryLid;
+              } else if (sock && sock.signalRepository && sock.signalRepository.lidMapping) {
+                try {
+                  const resolved = await sock.signalRepository.lidMapping.getLIDForPN(cleanJid);
+                  if (resolved) {
+                    alternateJid = sanitizeJid(resolved);
+                    pnToLidMap.set(cleanJid, alternateJid);
+                  }
+                } catch (err) {
+                  // Silencioso
+                }
               }
             }
 
             let history;
             if (alternateJid) {
-              history = await getChatHistoryUnified(jid, alternateJid, limit);
+              history = await getChatHistoryUnified(cleanJid, alternateJid, limit);
             } else {
-              history = await getChatHistory(jid, limit);
+              history = await getChatHistory(cleanJid, limit);
             }
             
             const myName = getMyName ? getMyName() : 'Você';
@@ -249,7 +278,7 @@ export function setupWebSocket(server) {
             ws.send(JSON.stringify({ 
                type: 'chat_history', 
                data: {
-                 jid,
+                 jid: cleanJid,
                  messages: enrichedMessages
                } 
             }));
