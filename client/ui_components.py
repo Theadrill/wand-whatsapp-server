@@ -555,14 +555,35 @@ class HistoryWindow(ctk.CTkToplevel):
         if "\n" not in text and len(text) < 20:
             display_text = text + "          "
             
-        lbl_text = ctk.CTkLabel(
-            balloon, text=display_text,
-            font=ctk.CTkFont(family="Segoe UI Variable Text", size=13),
-            text_color=text_color, justify="left",
-            wraplength=350
-        )
-        lbl_text.pack(anchor="w", padx=(12, 12), pady=(8, 18))
+        # Se for chat de grupo (@g.us) e mensagem recebida, exibe o nome do remetente no topo do balão em azul
+        is_group = self.selected_jid and self.selected_jid.endswith("@g.us")
+        sender_name = msg.get("senderName", "")
         
+        if is_group and not from_me and sender_name:
+            lbl_sender = ctk.CTkLabel(
+                balloon, text=sender_name,
+                font=ctk.CTkFont(family="Segoe UI Variable Text", size=11, weight="bold"),
+                text_color="#007AFF", # Azul clássico do iOS
+                justify="left"
+            )
+            lbl_sender.pack(anchor="w", padx=(12, 12), pady=(6, 0))
+            
+            lbl_text = ctk.CTkLabel(
+                balloon, text=display_text,
+                font=ctk.CTkFont(family="Segoe UI Variable Text", size=13),
+                text_color=text_color, justify="left",
+                wraplength=350
+            )
+            lbl_text.pack(anchor="w", padx=(12, 12), pady=(3, 18))
+        else:
+            lbl_text = ctk.CTkLabel(
+                balloon, text=display_text,
+                font=ctk.CTkFont(family="Segoe UI Variable Text", size=13),
+                text_color=text_color, justify="left",
+                wraplength=350
+            )
+            lbl_text.pack(anchor="w", padx=(12, 12), pady=(8, 18))
+            
         lbl_time = ctk.CTkLabel(
             balloon, text=time_str,
             font=ctk.CTkFont(size=9), text_color="#8E8E93", height=9
@@ -605,7 +626,8 @@ class HistoryWindow(ctk.CTkToplevel):
             self.create_message_balloon({
                 "fromMe": data.get("fromMe", False) or data.get("from") == "Você",
                 "text": data.get("text", ""),
-                "timestamp": data.get("timestamp", 0)
+                "timestamp": data.get("timestamp", 0),
+                "senderName": data.get("from", "")
             })
             self.update_idletasks()
             self.messages_scroll._parent_canvas.yview_moveto(1.0)
