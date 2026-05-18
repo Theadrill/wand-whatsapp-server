@@ -290,15 +290,30 @@ class HistoryWindow(ctk.CTkToplevel):
         )
         self.btn_dashboard.pack(fill="x", padx=15, pady=(2, 6))
         
-        # Barra de Busca Premium
+        # Barra de Busca Premium com placeholder interativo avançado
         self.search_var = ctk.StringVar()
         self.search_entry = ctk.CTkEntry(
             self.sidebar_frame, textvariable=self.search_var,
-            placeholder_text="🔍 Buscar...",
             height=28, corner_radius=8, border_width=1,
-            fg_color="#FFFFFF", text_color="#000000", placeholder_text_color="#8E8E93"
+            fg_color="#FFFFFF", text_color="#8E8E93"
         )
         self.search_entry.pack(fill="x", padx=15, pady=(2, 8))
+        
+        # Valor e cor iniciais do placeholder
+        self.search_var.set("🔍 Buscar...")
+        
+        def on_search_focus_in(event):
+            if self.search_var.get() == "🔍 Buscar...":
+                self.search_var.set("")
+                self.search_entry.configure(text_color="#000000")
+                
+        def on_search_focus_out(event):
+            if not self.search_var.get().strip():
+                self.search_var.set("🔍 Buscar...")
+                self.search_entry.configure(text_color="#8E8E93")
+                
+        self.search_entry.bind("<FocusIn>", on_search_focus_in)
+        self.search_entry.bind("<FocusOut>", on_search_focus_out)
         self.search_var.trace_add("write", lambda *args: self.on_search_change())
         
         self.sidebar_scroll = ctk.CTkScrollableFrame(self.sidebar_frame, fg_color="transparent", corner_radius=0)
@@ -366,9 +381,10 @@ class HistoryWindow(ctk.CTkToplevel):
         self.title_label.bind("<ButtonPress-1>", self.start_move)
         self.title_label.bind("<B1-Motion>", self.do_move)
   
-        # Maximizar com duplo clique na barra de título
-        self.title_bar.bind("<Double-Button-1>", lambda event: self.toggle_maximize())
-        self.title_label.bind("<Double-Button-1>", lambda event: self.toggle_maximize())
+        # Permite tirar o foco da busca ao clicar fora
+        self.bind("<Button-1>", lambda event: self.focus_set())
+        self.main_container.bind("<Button-1>", lambda event: self.focus_set())
+        self.sidebar_frame.bind("<Button-1>", lambda event: self.focus_set())
 
         # Exibe tela de carregamento na sidebar até o primeiro get_chats responder
         self.show_sidebar_loading()
@@ -439,6 +455,9 @@ class HistoryWindow(ctk.CTkToplevel):
         
         # Filtra localmente se houver busca
         q = self.search_var.get().strip().lower() if hasattr(self, 'search_var') else ""
+        if q == "🔍 buscar...":
+            q = ""
+            
         if q:
             filtered_chats = [c for c in chats_list if q in c.get("name", "").lower() or q in c.get("lastMessage", {}).get("text", "").lower()]
         else:
@@ -528,6 +547,9 @@ class HistoryWindow(ctk.CTkToplevel):
         
         # Filtra localmente se houver busca
         q = self.search_var.get().strip().lower() if hasattr(self, 'search_var') else ""
+        if q == "🔍 buscar...":
+            q = ""
+            
         if q:
             filtered_contacts = [c for c in contacts_list if q in c.get("name", "").lower()]
         else:
@@ -654,9 +676,9 @@ class HistoryWindow(ctk.CTkToplevel):
             self.after_cancel(self.search_debounce_timer)
             self.search_debounce_timer = None
             
-        # Se a busca estiver vazia, remove o filtro instantaneamente (0ms) para máxima fluidez
+        # Se a busca estiver vazia ou for o placeholder, remove o filtro instantaneamente (0ms) para máxima fluidez
         q = self.search_var.get().strip()
-        if not q:
+        if not q or q == "🔍 Buscar...":
             self.filter_sidebar()
         else:
             self.search_debounce_timer = self.after(800, self.filter_sidebar)
@@ -733,7 +755,8 @@ class HistoryWindow(ctk.CTkToplevel):
             
         # Limpa a busca ao voltar para o dashboard
         if hasattr(self, 'search_var'):
-            self.search_var.set("")
+            self.search_var.set("🔍 Buscar...")
+            self.search_entry.configure(text_color="#8E8E93")
             
         # Limpa o destaque de todos os cards com proteção robusta contra widgets destruídos
         jids_to_remove = []
