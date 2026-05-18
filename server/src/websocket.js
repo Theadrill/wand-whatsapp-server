@@ -1,5 +1,5 @@
 import { WebSocketServer } from 'ws';
-import { getHistory, getChats, getChatHistory, getContact, getChatHistoryUnified } from './database.js';
+import { getHistory, getChats, getChatHistory, getContact, getChatHistoryUnified, getAllContacts } from './database.js';
 import { sendMessage, getMyName, formatPhoneNumber, getSock, getContactsMemory } from './whatsapp.js';
 
 let wss;
@@ -265,6 +265,24 @@ export function setupWebSocket(server) {
           } catch (err) {
             console.error('[WebSocket] Erro ao enviar resposta:', err.message);
             ws.send(JSON.stringify({ type: 'send_status', status: 'error', message: err.message }));
+          }
+        } else if (payload.type === 'get_contacts') {
+          try {
+            const contacts = await getAllContacts();
+            
+            const cleanContacts = contacts
+              .filter(c => c.jid && !c.jid.includes(':'))
+              .map(c => {
+                const displayName = c.name || c.verifiedName || c.displayName || (formatPhoneNumber ? formatPhoneNumber(c.jid) : c.jid);
+                return {
+                  jid: c.jid,
+                  name: displayName
+                };
+              });
+
+            ws.send(JSON.stringify({ type: 'contacts', data: cleanContacts }));
+          } catch (err) {
+            console.error('[WebSocket] Erro ao buscar contatos:', err.message);
           }
         }
       } catch (error) {

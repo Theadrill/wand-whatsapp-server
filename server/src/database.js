@@ -160,6 +160,26 @@ export async function getContact(jid) {
 }
 
 /**
+ * Recupera todos os contatos do banco de dados SQLite ordenados alfabeticamente.
+ */
+export async function getAllContacts() {
+  if (!db) await initDatabase();
+  try {
+    return await db.all(`
+      SELECT * FROM contacts 
+      WHERE (name IS NOT NULL AND name != '')
+         OR (verifiedName IS NOT NULL AND verifiedName != '')
+         OR (displayName IS NOT NULL AND displayName != '')
+      ORDER BY COALESCE(name, verifiedName, displayName) ASC
+    `);
+  } catch (error) {
+    console.error('[DB] Erro ao recuperar todos os contatos do banco:', error);
+    return [];
+  }
+}
+
+
+/**
  * Recupera todos os chats ativos ordenados pela última mensagem.
  */
 export async function getChats() {

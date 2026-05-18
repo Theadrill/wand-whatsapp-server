@@ -121,7 +121,8 @@ class WANDClient:
             self.history_window = HistoryWindow(
                 self.root, 
                 on_send_callback=self.send_reply,
-                on_chat_selected_callback=self.select_chat
+                on_chat_selected_callback=self.select_chat,
+                on_contacts_request_callback=self.request_contacts
             )
         
         self.history_window.deiconify()
@@ -135,6 +136,12 @@ class WANDClient:
         """Envia o pedido de lista de chats ao servidor via WebSocket."""
         self._dispatch(
             self.network.send_command("get_chats", {})
+        )
+
+    def request_contacts(self):
+        """Envia o pedido de lista de contatos sincronizados ao servidor via WebSocket."""
+        self._dispatch(
+            self.network.send_command("get_contacts", {})
         )
         if not self.selected_jid:
             self._dispatch(
@@ -193,6 +200,11 @@ class WANDClient:
                     self.chats = chats_list
                     if self.history_window and self.history_window.winfo_exists():
                         self.history_window.update_chats_list(chats_list)
+
+                elif msg_type == "contacts":
+                    contacts_list = msg_data.get("data", [])
+                    if self.history_window and self.history_window.winfo_exists():
+                        self.history_window.update_contacts_list(contacts_list)
 
                 elif msg_type == "chat_history":
                     data = msg_data.get("data", {})

@@ -102,9 +102,20 @@ wand-whatsapp-server/
 **Objetivo:** UI completa, motor de privacidade e filtros avançados.
 
 *   **[X] 4.1. UI Master-Detail (`main.py` e `ui_components.py`):** Adicionar um Sidebar (contatos) à esquerda e tela de histórico geral na direita como estado inicial (Feed geral macOS). Incluído o botão **Dashboard** premium na barra lateral que permite retornar a esta visualização agregada inicial a qualquer momento limpando o estado de seleção.
-*   **4.2. Auto-Privacy (Toast do Cliente):** Atualizar o Toast para borrar o texto após X segundos e empilhar badges vermelhos de contagem. Clicar no Toast abre o Chat correspondente.
-*   **4.3. Web UI e Configurações (`src/config.js`):** Criar os botões na UI do Python ou na interface Web do servidor para gerenciar Whitelist/Blacklist (Contatos, Grupos e Canais), Modo Não Perturbe e Tempo de Censura. O Node deve aplicar os filtros (descartando mensagens da blacklist na raiz).
-*   **4.4. Pipeline de Mídia (Baileys + Python):** Implementar os 3 estágios de economia de dados: (1) Preview Thumbnail -> (2) Download em RAM sob demanda -> (3) Gravar em Disco.
+*   **4.2. Barra de Busca (`ui_components.py` e `main.py`):**
+    - **Objetivo:** Adicionar uma barra de busca premium (campo `CTkEntry` moderno com design clean) na barra lateral abaixo do botão **Dashboard** e fixa no topo (fora do container de rolagem).
+    - **Comportamento:** Ao digitar qualquer caractere, realizar filtragem local instantânea em tempo real tanto nos cards de conversas ativas quanto na lista de contatos sincronizados (quando a seção estiver aberta).
+*   **4.3. Barra Colapsável de Contatos (`ui_components.py`, `main.py`, `database.js` e `websocket.js`):**
+    - **4.3.1. Sincronização e exibição dos contatos:** 
+      - Adicionar no SQLite a função `getAllContacts()` para ler todos os contatos.
+      - Criar a rota no WebSocket Node.js (`get_contacts`) para transmitir a lista de contatos sincronizados para o cliente Python.
+      - No cliente Python, adicionar uma linha horizontal interativa e colapsável de **Contatos** com uma seta indicativa (`▼` / `▲`). Ao clicar, expandir ("descer") os contatos sincronizados abaixo das conversas ativas.
+    - **4.3.2. Abertura de chat vazio e envio de novas mensagens:** 
+      - Ao clicar em um contato sincronizado sem histórico, abrir uma janela de chat vazia no painel da direita, limpar o histórico de balões exibindo uma mensagem sutil de introdução (ex: *"Esta é uma nova conversa. Digite para começar..."*).
+      - Habilitar o campo de digitação e botão de envio no rodapé. Ao disparar a primeira mensagem, enviar via WebSocket (`send_message`) e inserir dinamicamente na lista de conversas ativas.
+*   **4.4. Auto-Privacy (Toast do Cliente):** Atualizar o Toast para borrar o texto após X segundos e empilhar badges vermelhos de contagem. Clicar no Toast abre o Chat correspondente.
+*   **4.5. Web UI e Configurações (`src/config.js`):** Criar os botões na UI do Python ou na interface Web do servidor para gerenciar Whitelist/Blacklist (Contatos, Grupos e Canais), Modo Não Perturbe e Tempo de Censura. O Node deve aplicar os filtros (descartando mensagens da blacklist na raiz).
+*   **4.6. Pipeline de Mídia (Baileys + Python):** Implementar os 3 estágios de economia de dados: (1) Preview Thumbnail -> (2) Download em RAM sob demanda -> (3) Gravar em Disco.
 
 ---
 

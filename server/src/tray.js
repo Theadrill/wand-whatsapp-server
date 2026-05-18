@@ -54,10 +54,48 @@ function getMenuConfig(connected = false) {
 }
 
 /**
+ * Garante o encerramento de qualquer resquício anterior da bandeja no Windows
+ */
+function killOrphanedTray() {
+  return new Promise((resolve) => {
+    if (os.platform() === 'win32') {
+      exec('taskkill /f /im tray_windows_release.exe', () => {
+        // Ignora erros (como processo não encontrado) e prossegue
+        resolve();
+      });
+    } else {
+      resolve();
+    }
+  });
+}
+
+/**
+ * Garante o encerramento limpo se o processo Node for finalizado
+ */
+function registerCleanup() {
+  const cleanup = () => {
+    if (systray) {
+      try {
+        systray.kill();
+      } catch (e) {}
+    }
+  };
+  process.on('exit', cleanup);
+  process.on('SIGINT', () => { cleanup(); process.exit(0); });
+  process.on('SIGTERM', () => { cleanup(); process.exit(0); });
+  process.on('message', (msg) => {
+    if (msg === 'shutdown') { cleanup(); process.exit(0); }
+  });
+}
+
+/**
  * Inicializa a System Tray
  */
 export async function setupTray() {
   try {
+    // 1. Limpa qualquer processo órfão anterior para evitar travamento no Windows
+    await killOrphanedTray();
+
     console.log('[Tray] Iniciando processo da bandeja...');
     systray = new SysTrayClass(getMenuConfig());
 
@@ -65,6 +103,9 @@ export async function setupTray() {
     await systray.ready();
     
     console.log('[Tray] Ícone da bandeja carregado e pronto.');
+
+    // 2. Registra o cleanup automático no encerramento do Node.js
+    registerCleanup();
 
     systray.onClick(async (action) => {
       const title = action.item.title;

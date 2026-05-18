@@ -160,12 +160,15 @@ class ToastNotification(ctk.CTkToplevel):
 
 
 class HistoryWindow(ctk.CTkToplevel):
-    def __init__(self, master, on_send_callback=None, on_chat_selected_callback=None):
+    def __init__(self, master, on_send_callback=None, on_chat_selected_callback=None, on_contacts_request_callback=None):
         super().__init__(master)
         self.on_send_callback = on_send_callback
         self.on_chat_selected_callback = on_chat_selected_callback
+        self.on_contacts_request_callback = on_contacts_request_callback
         self.selected_jid = None
         self.chats = []
+        self.contacts = []
+        self.contacts_expanded = False
         self.chat_cards = {}
         
         # Configurações da Janela
@@ -381,21 +384,60 @@ class HistoryWindow(ctk.CTkToplevel):
         """Associa clique esquerdo para selecionar um chat."""
         widget.bind("<Button-1>", lambda e: self.select_chat(jid))
 
+    def ensure_containers_exist(self):
+        """Garante que os containers persistentes da barra lateral existam e estejam limpos de carregadores."""
+        if not hasattr(self, 'chats_container') or not self.chats_container.winfo_exists():
+            # Limpa qualquer carregador temporário
+            for widget in self.sidebar_scroll.winfo_children():
+                widget.destroy()
+                
+            self.chats_container = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
+            self.chats_container.pack(fill="x")
+            
+            self.sidebar_separator = ctk.CTkFrame(self.sidebar_scroll, height=1, fg_color="#E5E5EA")
+            self.sidebar_separator.pack(fill="x", pady=(15, 10), padx=10)
+            
+            self.contacts_header_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent", height=28, cursor="hand2")
+            self.contacts_header_frame.pack(fill="x", padx=5)
+            
+            arrow = "▲" if self.contacts_expanded else "▼"
+            self.lbl_contacts_header = ctk.CTkLabel(
+                self.contacts_header_frame, text=f"{arrow} Contatos Sincronizados",
+                font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
+                text_color="#8E8E93"
+            )
+            self.lbl_contacts_header.pack(side="left", padx=10)
+            
+            self.contacts_header_frame.bind("<Button-1>", lambda e: self.toggle_contacts())
+            self.lbl_contacts_header.bind("<Button-1>", lambda e: self.toggle_contacts())
+            
+            self.contacts_container = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
+            if self.contacts_expanded:
+                self.contacts_container.pack(fill="x")
+
     def update_chats_list(self, chats_list):
-        """Atualiza a sidebar de conversas com cards interativos."""
-        self.chats = chats_list
+        """Atualiza apenas o container de conversas ativas na sidebar."""
+        import time
+        t0 = time.perf_counter()
         
-        for widget in self.sidebar_scroll.winfo_children():
+        self.chats = chats_list
+        self.ensure_containers_exist()
+        
+        # Limpa apenas os widgets dentro do container de chats
+        for widget in self.chats_container.winfo_children():
             widget.destroy()
             
-        self.chat_cards = {}
+        # Limpa do self.chat_cards apenas os JIDs que pertencem às conversas ativas
+        active_jids = {chat.get("jid") for chat in chats_list}
+        self.chat_cards = {jid: card for jid, card in self.chat_cards.items() if jid not in active_jids}
         
         if not chats_list:
             lbl_empty = ctk.CTkLabel(
-                self.sidebar_scroll, text="Nenhuma conversa ativa",
+                self.chats_container, text="Nenhuma conversa ativa",
                 font=ctk.CTkFont(size=11), text_color="#8E8E93"
             )
             lbl_empty.pack(pady=20)
+            print(f"[UI DEBUG] Chats vazios renderizados em {(time.perf_counter() - t0)*1000:.2f}ms")
             return
             
         for chat in chats_list:
@@ -405,7 +447,6 @@ class HistoryWindow(ctk.CTkToplevel):
             last_text = last_msg.get("text", "")
             last_ts = last_msg.get("timestamp", 0)
             
-            # Trunca o texto para caber perfeitamente na sidebar
             if len(last_text) > 22:
                 last_text = last_text[:22] + "..."
                 
@@ -417,9 +458,8 @@ class HistoryWindow(ctk.CTkToplevel):
             bg_color = "#D1D1D6" if is_selected else "#FFFFFF"
             border_color = "#007AFF" if is_selected else "#E5E5EA"
             
-            # Card do Contato (Altura 60px elegante)
             card = ctk.CTkFrame(
-                self.sidebar_scroll, fg_color=bg_color,
+                self.chats_container, fg_color=bg_color,
                 corner_radius=8, border_width=1, border_color=border_color,
                 height=60, cursor="hand2"
             )
@@ -428,7 +468,6 @@ class HistoryWindow(ctk.CTkToplevel):
             
             self.bind_click_to_widget(card, jid)
             
-            # Nome do Contato
             lbl_name = ctk.CTkLabel(
                 card, text=name,
                 font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
@@ -437,7 +476,6 @@ class HistoryWindow(ctk.CTkToplevel):
             lbl_name.place(x=10, y=8)
             self.bind_click_to_widget(lbl_name, jid)
             
-            # Última mensagem
             lbl_msg = ctk.CTkLabel(
                 card, text=last_text,
                 font=ctk.CTkFont(family="Segoe UI Variable Text", size=11),
@@ -446,7 +484,6 @@ class HistoryWindow(ctk.CTkToplevel):
             lbl_msg.place(x=10, y=28)
             self.bind_click_to_widget(lbl_msg, jid)
             
-            # Hora da última mensagem
             lbl_time = ctk.CTkLabel(
                 card, text=time_str,
                 font=ctk.CTkFont(size=9), text_color="#8E8E93"
@@ -455,6 +492,122 @@ class HistoryWindow(ctk.CTkToplevel):
             self.bind_click_to_widget(lbl_time, jid)
             
             self.chat_cards[jid] = card
+            
+        print(f"[UI DEBUG] Chats atualizados com sucesso em {(time.perf_counter() - t0)*1000:.2f}ms")
+
+    def update_contacts_list(self, contacts_list):
+        """Atualiza o container de contatos sincronizados na sidebar (limite de 50 para performance)."""
+        import time
+        t0 = time.perf_counter()
+        
+        self.contacts = contacts_list
+        self.ensure_containers_exist()
+        
+        # Limpa apenas os widgets do container de contatos
+        for widget in self.contacts_container.winfo_children():
+            widget.destroy()
+            
+        # Limpa do self.chat_cards apenas os JIDs que pertencem aos contatos sincronizados
+        contact_jids = {c.get("jid") for c in contacts_list}
+        self.chat_cards = {jid: card for jid, card in self.chat_cards.items() if jid not in contact_jids}
+        
+        if not contacts_list:
+            lbl_no_contacts = ctk.CTkLabel(
+                self.contacts_container, text="Nenhum contato encontrado",
+                font=ctk.CTkFont(size=11), text_color="#8E8E93"
+            )
+            lbl_no_contacts.pack(pady=10)
+            print(f"[UI DEBUG] Contatos vazios renderizados em {(time.perf_counter() - t0)*1000:.2f}ms")
+            return
+
+        # Limita a exibição a 50 contatos para manter performance 60 FPS fluida
+        max_display = 50
+        displayed_contacts = contacts_list[:max_display]
+        
+        for contact in displayed_contacts:
+            jid = contact.get("jid")
+            name = contact.get("name", "Contato")
+            
+            is_selected = (self.selected_jid == jid)
+            bg_color = "#D1D1D6" if is_selected else "#FFFFFF"
+            border_color = "#007AFF" if is_selected else "#E5E5EA"
+            
+            card = ctk.CTkFrame(
+                self.contacts_container, fg_color=bg_color,
+                corner_radius=8, border_width=1, border_color=border_color,
+                height=40, cursor="hand2"
+            )
+            card.pack(fill="x", pady=3, padx=5)
+            card.pack_propagate(False)
+            
+            self.bind_click_to_widget(card, jid)
+            
+            # Avatar circular com inicial
+            avatar_frame = ctk.CTkFrame(card, fg_color="#EFEFF4", width=24, height=24, corner_radius=12)
+            avatar_frame.place(x=8, y=8)
+            avatar_frame.pack_propagate(False)
+            
+            lbl_avatar = ctk.CTkLabel(
+                avatar_frame, text=name[0].upper() if name else "?",
+                font=ctk.CTkFont(family="Segoe UI", size=10, weight="bold"),
+                text_color="#8E8E93"
+            )
+            lbl_avatar.pack(expand=True)
+            
+            self.bind_click_to_widget(avatar_frame, jid)
+            self.bind_click_to_widget(lbl_avatar, jid)
+            
+            # Nome do contato
+            lbl_name = ctk.CTkLabel(
+                card, text=name,
+                font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
+                text_color="#000000"
+            )
+            lbl_name.place(x=40, y=8)
+            self.bind_click_to_widget(lbl_name, jid)
+            
+            self.chat_cards[jid] = card
+
+        # Se houver mais contatos, adiciona um aviso premium e amigável no final da lista
+        if len(contacts_list) > max_display:
+            lbl_more = ctk.CTkLabel(
+                self.contacts_container, 
+                text=f"Mostrando 50 de {len(contacts_list)} contatos.\nUse a busca para filtrar.",
+                font=ctk.CTkFont(family="Segoe UI Variable Text", size=10, weight="bold"), 
+                text_color="#8E8E93",
+                justify="center"
+            )
+            lbl_more.pack(pady=10)
+            
+        print(f"[UI DEBUG] Contatos atualizados em {(time.perf_counter() - t0)*1000:.2f}ms")
+
+    def toggle_contacts(self):
+        """Expande ou recolhe a seção de contatos instantaneamente (0ms) usando pack_forget/pack."""
+        import time
+        t0 = time.perf_counter()
+        
+        self.contacts_expanded = not self.contacts_expanded
+        self.ensure_containers_exist()
+        
+        arrow = "▲" if self.contacts_expanded else "▼"
+        self.lbl_contacts_header.configure(text=f"{arrow} Contatos Sincronizados")
+        
+        if self.contacts_expanded:
+            self.contacts_container.pack(fill="x")
+            if not self.contacts:
+                # Mostra estado de carregamento inicial
+                lbl_no_contacts = ctk.CTkLabel(
+                    self.contacts_container, text="Carregando contatos...",
+                    font=ctk.CTkFont(size=11), text_color="#8E8E93"
+                )
+                lbl_no_contacts.pack(pady=10)
+                
+                if self.on_contacts_request_callback:
+                    self.on_contacts_request_callback()
+        else:
+            self.contacts_container.pack_forget()
+            
+        print(f"[UI DEBUG] Contatos toggled em {(time.perf_counter() - t0)*1000:.2f}ms")
 
     def select_chat(self, jid):
         """Seleciona um contato da sidebar, mudando o destaque visual e invocando a callback."""
@@ -466,10 +619,17 @@ class HistoryWindow(ctk.CTkToplevel):
         
         # Atualiza título do cabeçalho
         chat_name = "Conversa"
+        found = False
         for chat in self.chats:
             if chat.get("jid") == jid:
                 chat_name = chat.get("name", "Conversa")
+                found = True
                 break
+        if not found:
+            for contact in self.contacts:
+                if contact.get("jid") == jid:
+                    chat_name = contact.get("name", "Conversa")
+                    break
         self.lbl_active_chat.configure(text=chat_name)
         
         # Exibe a barra de entrada
