@@ -173,6 +173,13 @@ export async function getChats() {
         m.timestamp as lastTimestamp,
         m.fromMe as lastFromMe,
         m.senderName as lastSenderName,
+        (
+          SELECT senderName 
+          FROM messages 
+          WHERE remoteJid = m.remoteJid AND fromMe = 0 
+          ORDER BY timestamp DESC 
+          LIMIT 1
+        ) as lastIncomingSenderName,
         c.name as contactName,
         c.verifiedName as contactVerifiedName,
         c.displayName as contactDisplayName
@@ -182,7 +189,14 @@ export async function getChats() {
         FROM messages
         GROUP BY remoteJid
       ) latest ON m.remoteJid = latest.remoteJid AND m.timestamp = latest.max_ts
-      LEFT JOIN contacts c ON m.remoteJid = c.jid
+      LEFT JOIN contacts c ON (
+        m.remoteJid = c.jid 
+        OR (
+          INSTR(m.remoteJid, '@') > 0 
+          AND INSTR(c.jid, '@') > 0 
+          AND SUBSTR(m.remoteJid, 1, INSTR(m.remoteJid, '@') - 1) = SUBSTR(c.jid, 1, INSTR(c.jid, '@') - 1)
+        )
+      )
       GROUP BY m.remoteJid
       ORDER BY m.timestamp DESC
     `);
@@ -205,6 +219,22 @@ export async function getChatHistory(remoteJid, limit = 50) {
     );
   } catch (error) {
     console.error('[DB] Erro ao buscar histórico do chat:', error);
+    return [];
+  }
+}
+
+/**
+ * Recupera o histórico de mensagens de um chat específico unificando dois JIDs (ex: LID e PN).
+ */
+export async function getChatHistoryUnified(jid1, jid2, limit = 50) {
+  if (!db) await initDatabase();
+  try {
+    return await db.all(
+      'SELECT * FROM messages WHERE remoteJid = ? OR remoteJid = ? ORDER BY timestamp DESC LIMIT ?',
+      [jid1, jid2, limit]
+    );
+  } catch (error) {
+    console.error('[DB] Erro ao buscar histórico unificado do chat:', error);
     return [];
   }
 }

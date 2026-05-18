@@ -38,6 +38,8 @@ const logger = pino({ level: 'error' });
 const storePath = path.resolve(__dirname, '../baileys_store.json');
 const contactsPath = path.resolve(__dirname, '../baileys_contacts.json');
 let chats = new Map();
+export const lidToPnMap = new Map();
+export const pnToLidMap = new Map();
 let contacts = new Map();
 
 // Propriedades seguras para persistência (evita salvar o conteúdo das mensagens)
@@ -295,6 +297,7 @@ export async function connectToWhatsApp() {
       logger,
       browser: ['WAND Server', 'Chrome', '121.0.0'], // Identificação robusta
       generateHighQualityLinkPreview: false, // Otimização de performance
+      markOnlineOnConnect: false,
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -358,6 +361,10 @@ export async function connectToWhatsApp() {
       if (history.contacts) {
         for (const contact of history.contacts) {
           contacts.set(contact.id, contact);
+          if (contact.lid && contact.id) {
+            lidToPnMap.set(contact.lid, contact.id);
+            pnToLidMap.set(contact.id, contact.lid);
+          }
           await saveContact({
             jid: contact.id,
             name: contact.name,
@@ -433,6 +440,10 @@ export async function connectToWhatsApp() {
     sock.ev.on('contacts.upsert', async (newContacts) => {
       for (const contact of newContacts) {
         contacts.set(contact.id, contact);
+        if (contact.lid && contact.id) {
+          lidToPnMap.set(contact.lid, contact.id);
+          pnToLidMap.set(contact.id, contact.lid);
+        }
         await saveContact({
           jid: contact.id,
           name: contact.name,
@@ -457,6 +468,10 @@ export async function connectToWhatsApp() {
         const contact = contacts.get(update.id) || {};
         const merged = { ...contact, ...update };
         contacts.set(update.id, merged);
+        if (merged.lid && merged.id) {
+          lidToPnMap.set(merged.lid, merged.id);
+          pnToLidMap.set(merged.id, merged.lid);
+        }
         await saveContact({
           jid: update.id,
           name: merged.name,
@@ -483,6 +498,11 @@ export async function connectToWhatsApp() {
       if (m.type === 'notify' || m.type === 'append') {
         for (const msg of m.messages) {
           const isMe = msg.key.fromMe;
+
+          // Ignora mensagens de sincronização técnica de dispositivos secundários (JIDs contendo ":")
+          if (msg.key.remoteJid && msg.key.remoteJid.includes(':')) {
+            continue;
+          }
 
           // 0. Filtro de Chats Silenciados (MÁXIMA PRIORIDADE - Executa antes de tudo)
           if (config.filter_muted_chats) {
@@ -590,14 +610,27 @@ export async function connectToWhatsApp() {
             }
           }
 
+          let alternateJid = null;
+          if (msg.key.remoteJid.endsWith('@lid') && sock && sock.signalRepository && sock.signalRepository.lidMapping) {
+            try {
+              alternateJid = await sock.signalRepository.lidMapping.getPNForLID(msg.key.remoteJid);
+            } catch (err) {}
+          } else if (msg.key.remoteJid.endsWith('@s.whatsapp.net') && sock && sock.signalRepository && sock.signalRepository.lidMapping) {
+            try {
+              alternateJid = await sock.signalRepository.lidMapping.getLIDForPN(msg.key.remoteJid);
+            } catch (err) {}
+          }
+
           broadcast({
             type: 'message',
             data: {
               from: senderName,
               text: text,
+              fromMe: isMe,
               sticker: stickerBase64,
               timestamp: Date.now(),
               remoteJid: msg.key.remoteJid,
+              alternateJid: alternateJid,
               senderName: senderName,
               receiverName: receiverName,
               senderNumber: senderNumber
@@ -658,5 +691,14 @@ export async function resetSession() {
  */
 export async function sendMessage(remoteJid, text) {
   if (!sock) throw new Error('WhatsApp não está conectado');
+  console.log(`[WhatsApp] Enviando mensagem fiel ao JID: ${remoteJid}`);
   return await sock.sendMessage(remoteJid, { text });
+}
+
+export function getSock() {
+  return sock;
+}
+
+export function getContactsMemory() {
+  return contacts;
 }

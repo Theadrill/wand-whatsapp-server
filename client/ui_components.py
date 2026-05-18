@@ -617,14 +617,41 @@ class HistoryWindow(ctk.CTkToplevel):
     def handle_incoming_message(self, data):
         """Trata o recebimento de mensagens em tempo real na janela ativa."""
         remote_jid = data.get("remoteJid", "")
+        alternate_jid = data.get("alternateJid", "")
         
-        if self.selected_jid == remote_jid:
+        if self.selected_jid == remote_jid or (alternate_jid and self.selected_jid == alternate_jid):
+            from_me = data.get("fromMe", False) or data.get("from") == "Você"
+            
+            # Se a mensagem for nossa, verifica se já foi desenhada pelo feedback instantâneo local
+            if from_me:
+                children = self.messages_container.winfo_children()
+                if children:
+                    last_widget = children[-1]
+                    balloon_frame = None
+                    for child in last_widget.winfo_children():
+                        if isinstance(child, ctk.CTkFrame):
+                            balloon_frame = child
+                            break
+                    if balloon_frame:
+                        lbl_text = None
+                        for b_child in balloon_frame.winfo_children():
+                            # Procura pelo widget do texto da mensagem (que tem wraplength=350)
+                            if isinstance(b_child, ctk.CTkLabel) and b_child.cget("wraplength") == 350:
+                                lbl_text = b_child
+                                break
+                        if lbl_text:
+                            # Compara o texto na tela (removendo preenchimentos extras de linha única) com o novo
+                            last_text = lbl_text.cget("text").rstrip()
+                            new_text = data.get("text", "")
+                            if last_text == new_text:
+                                return # Ignora a duplicação!
+            
             children = self.messages_container.winfo_children()
             if len(children) == 1 and isinstance(children[0], ctk.CTkLabel) and "Nenhuma mensagem" in children[0].cget("text"):
                 children[0].destroy()
                 
             self.create_message_balloon({
-                "fromMe": data.get("fromMe", False) or data.get("from") == "Você",
+                "fromMe": from_me,
                 "text": data.get("text", ""),
                 "timestamp": data.get("timestamp", 0),
                 "senderName": data.get("from", "")

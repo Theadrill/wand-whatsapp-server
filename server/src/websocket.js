@@ -1,6 +1,6 @@
 import { WebSocketServer } from 'ws';
-import { getHistory, getChats, getChatHistory } from './database.js';
-import { sendMessage, getMyName, formatPhoneNumber } from './whatsapp.js';
+import { getHistory, getChats, getChatHistory, getContact, getChatHistoryUnified } from './database.js';
+import { sendMessage, getMyName, formatPhoneNumber, getSock, getContactsMemory } from './whatsapp.js';
 
 let wss;
 const clients = new Set();
@@ -78,16 +78,91 @@ export function setupWebSocket(server) {
           try {
             const rawChats = await getChats();
             const myName = getMyName ? getMyName() : 'Você';
-            const enrichedChats = rawChats.map(chat => {
-              let contactName = chat.contactName || chat.contactVerifiedName || chat.contactDisplayName || chat.lastSenderName || 'Desconhecido';
+            const sock = getSock ? getSock() : null;
+            const contacts = getContactsMemory ? getContactsMemory() : null;
+            
+            const chatMap = new Map(); // Indexado pelo JID real unificado (PN)
+
+            for (const chat of rawChats) {
+              const isGroup = chat.remoteJid.endsWith('@g.us');
+              
+              // Se for um JID técnico de sincronização contendo ":", ignora totalmente
+              if (chat.remoteJid.includes(':')) continue;
+
+              // Determina o JID real unificado (preferencialmente PN)
+              let unifiedJid = chat.remoteJid;
+              let pnJid = null;
+              
+              if (chat.remoteJid.endsWith('@lid') && sock && sock.signalRepository && sock.signalRepository.lidMapping) {
+                try {
+                  pnJid = await sock.signalRepository.lidMapping.getPNForLID(chat.remoteJid);
+                  if (pnJid) {
+                    unifiedJid = pnJid;
+                  }
+                } catch (err) {
+                  // Silencioso
+                }
+              }
+
+              // Busca o contato na agenda local usando tanto o JID da conversa quanto o PN resolvido
+              let contact = null;
+              if (contacts) {
+                if (contacts.has(chat.remoteJid)) {
+                  contact = contacts.get(chat.remoteJid);
+                } else if (pnJid && contacts.has(pnJid)) {
+                  contact = contacts.get(pnJid);
+                }
+              }
+
+              // Se não estiver no cache em memória, busca na tabela contacts do SQLite
+              if (!contact) {
+                try {
+                  contact = await getContact(chat.remoteJid) || (pnJid ? await getContact(pnJid) : null);
+                  if (contact && contacts) {
+                    contacts.set(contact.jid, contact);
+                  }
+                } catch (dbErr) {
+                  // Silencioso
+                }
+              }
+
+              let contactName = 'Desconhecido';
+              let displayName = null;
+
+              if (contact) {
+                contactName = contact.name || contact.verifiedName || contact.displayName || 'Desconhecido';
+                displayName = contact.name || contact.verifiedName || contact.displayName;
+              }
+
+              // Se o contato não está na agenda, tenta usar os fallbacks de pushName públicos
+              if (!displayName) {
+                if (isGroup) {
+                  displayName = chat.lastSenderName || chat.remoteJid;
+                } else {
+                  // 1. pushName público de quem enviou a última mensagem recebida
+                  if (chat.lastIncomingSenderName && chat.lastIncomingSenderName !== 'Você' && chat.lastIncomingSenderName !== 'Desconhecido') {
+                    displayName = chat.lastIncomingSenderName;
+                  } 
+                  // 2. pushName público geral da última mensagem
+                  else if (chat.lastSenderName && chat.lastSenderName !== 'Você' && chat.lastSenderName !== 'Desconhecido') {
+                    displayName = chat.lastSenderName;
+                  } 
+                  // 3. Fallback final: número telefônico formatado
+                  else {
+                    displayName = formatPhoneNumber ? formatPhoneNumber(unifiedJid) : unifiedJid;
+                  }
+                }
+              }
+
+              if (contactName === 'Desconhecido' && !isGroup) {
+                contactName = displayName;
+              }
+
               if (chat.lastFromMe === 1) {
                 contactName = myName;
               }
-              
-              const isGroup = chat.remoteJid.endsWith('@g.us');
-              const displayName = chat.contactName || chat.contactVerifiedName || chat.contactDisplayName || chat.lastSenderName || (formatPhoneNumber ? formatPhoneNumber(chat.remoteJid) : chat.remoteJid);
-              
-              return {
+
+              const chatData = {
                 jid: chat.remoteJid,
                 name: displayName + (isGroup ? ' (Grupo)' : ''),
                 unreadCount: 0,
@@ -98,7 +173,21 @@ export function setupWebSocket(server) {
                   senderName: chat.lastFromMe === 1 ? myName : contactName
                 }
               };
-            });
+
+              // Se o JID unificado já existe no mapa, mantém a mensagem mais recente
+              if (chatMap.has(unifiedJid)) {
+                const existing = chatMap.get(unifiedJid);
+                if (chatData.lastMessage.timestamp > existing.lastMessage.timestamp) {
+                  chatMap.set(unifiedJid, chatData);
+                }
+              } else {
+                chatMap.set(unifiedJid, chatData);
+              }
+            }
+
+            const enrichedChats = Array.from(chatMap.values());
+            // Ordena pela mensagem mais recente de todas
+            enrichedChats.sort((a, b) => b.lastMessage.timestamp - a.lastMessage.timestamp);
             
             ws.send(JSON.stringify({ type: 'chats', data: enrichedChats }));
           } catch (err) {
@@ -108,7 +197,30 @@ export function setupWebSocket(server) {
           try {
             const { jid } = payload;
             const limit = payload.limit || 50;
-            const history = await getChatHistory(jid, limit);
+            const sock = getSock ? getSock() : null;
+
+            // Se for LID ou PN, resolve o JID alternativo para unificar o histórico
+            let alternateJid = null;
+            if (jid.endsWith('@lid') && sock && sock.signalRepository && sock.signalRepository.lidMapping) {
+              try {
+                alternateJid = await sock.signalRepository.lidMapping.getPNForLID(jid);
+              } catch (err) {
+                // Silencioso
+              }
+            } else if (jid.endsWith('@s.whatsapp.net') && sock && sock.signalRepository && sock.signalRepository.lidMapping) {
+              try {
+                alternateJid = await sock.signalRepository.lidMapping.getLIDForPN(jid);
+              } catch (err) {
+                // Silencioso
+              }
+            }
+
+            let history;
+            if (alternateJid) {
+              history = await getChatHistoryUnified(jid, alternateJid, limit);
+            } else {
+              history = await getChatHistory(jid, limit);
+            }
             
             const myName = getMyName ? getMyName() : 'Você';
             const enrichedMessages = history.map(msg => {
@@ -135,11 +247,11 @@ export function setupWebSocket(server) {
             enrichedMessages.reverse();
             
             ws.send(JSON.stringify({ 
-              type: 'chat_history', 
-              data: {
-                jid,
-                messages: enrichedMessages
-              } 
+               type: 'chat_history', 
+               data: {
+                 jid,
+                 messages: enrichedMessages
+               } 
             }));
           } catch (err) {
             console.error('[WebSocket] Erro ao buscar historico do chat:', err.message);
