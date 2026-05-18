@@ -106,7 +106,7 @@ wand-whatsapp-server/
     - **Objetivo:** Adicionar uma barra de busca premium (campo `CTkEntry` moderno com design clean) na barra lateral abaixo do botão **Dashboard** e fixa no topo (fora do container de rolagem).
     - **Comportamento:** Ao digitar qualquer caractere, realizar filtragem local instantânea em tempo real tanto nos cards de conversas ativas quanto na lista de contatos sincronizados (quando a seção estiver aberta).
 *   **4.3. Barra Colapsável de Contatos (`ui_components.py`, `main.py`, `database.js` e `websocket.js`):**
-    - **4.3.1. Sincronização e exibição dos contatos:** 
+    - **[X] 4.3.1. Sincronização e exibição dos contatos:** 
       - Adicionar no SQLite a função `getAllContacts()` para ler todos os contatos.
       - Criar a rota no WebSocket Node.js (`get_contacts`) para transmitir a lista de contatos sincronizados para o cliente Python.
       - No cliente Python, adicionar uma linha horizontal interativa e colapsável de **Contatos** com uma seta indicativa (`▼` / `▲`). Ao clicar, expandir ("descer") os contatos sincronizados abaixo das conversas ativas.
