@@ -290,28 +290,34 @@ class HistoryWindow(ctk.CTkToplevel):
         )
         self.btn_dashboard.pack(fill="x", padx=15, pady=(2, 6))
         
-        # Barra de Busca Premium com placeholder interativo avançado
+        # Barra de Busca Premium
         self.search_var = ctk.StringVar()
         self.search_entry = ctk.CTkEntry(
             self.sidebar_frame, textvariable=self.search_var,
             height=28, corner_radius=8, border_width=1,
-            fg_color="#FFFFFF", text_color="#8E8E93"
+            fg_color="#FFFFFF", text_color="#000000"
         )
         self.search_entry.pack(fill="x", padx=15, pady=(2, 8))
         
-        # Valor e cor iniciais do placeholder
-        self.search_var.set("🔍 Buscar...")
+        # Camada extra de placeholder sobreposta por cima do campo de busca
+        self.search_placeholder = ctk.CTkLabel(
+            self.search_entry, text="🔍 Buscar Contato...",
+            text_color="#8E8E93", font=ctk.CTkFont(family="Segoe UI", size=12),
+            fg_color="transparent", anchor="w"
+        )
+        self.show_search_placeholder()
         
+        def on_placeholder_click(event):
+            self.search_placeholder.place_forget()
+            self.search_entry.focus_set()
+            
         def on_search_focus_in(event):
-            if self.search_var.get() == "🔍 Buscar...":
-                self.search_var.set("")
-                self.search_entry.configure(text_color="#000000")
-                
+            self.search_placeholder.place_forget()
+            
         def on_search_focus_out(event):
-            if not self.search_var.get().strip():
-                self.search_var.set("🔍 Buscar...")
-                self.search_entry.configure(text_color="#8E8E93")
+            self.show_search_placeholder()
                 
+        self.search_placeholder.bind("<Button-1>", on_placeholder_click)
         self.search_entry.bind("<FocusIn>", on_search_focus_in)
         self.search_entry.bind("<FocusOut>", on_search_focus_out)
         self.search_var.trace_add("write", lambda *args: self.on_search_change())
@@ -381,10 +387,9 @@ class HistoryWindow(ctk.CTkToplevel):
         self.title_label.bind("<ButtonPress-1>", self.start_move)
         self.title_label.bind("<B1-Motion>", self.do_move)
   
-        # Permite tirar o foco da busca ao clicar fora
-        self.bind("<Button-1>", lambda event: self.focus_set())
-        self.main_container.bind("<Button-1>", lambda event: self.focus_set())
-        self.sidebar_frame.bind("<Button-1>", lambda event: self.focus_set())
+        # Maximizar com duplo clique na barra de título
+        self.title_bar.bind("<Double-Button-1>", lambda event: self.toggle_maximize())
+        self.title_label.bind("<Double-Button-1>", lambda event: self.toggle_maximize())
 
         # Exibe tela de carregamento na sidebar até o primeiro get_chats responder
         self.show_sidebar_loading()
@@ -421,16 +426,29 @@ class HistoryWindow(ctk.CTkToplevel):
             for widget in self.sidebar_scroll.winfo_children():
                 widget.destroy()
                 
+            # Força o Canvas a se atualizar imediatamente após limpar o loader inicial para evitar artefatos visuais
+            if hasattr(self.sidebar_scroll, '_parent_canvas'):
+                try:
+                    self.sidebar_scroll._parent_canvas.update_idletasks()
+                except Exception:
+                    pass
+                
             self.chats_container = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
             self.chats_container.pack(fill="x")
             
             self.sidebar_separator = ctk.CTkFrame(self.sidebar_scroll, height=1, fg_color="#E5E5EA")
             self.sidebar_separator.pack(fill="x", pady=(15, 10), padx=10)
             
-            self.contacts_header_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent", height=28, cursor="hand2")
-            self.contacts_header_frame.pack(fill="x", padx=5)
+            # --- CONFIGURAÇÃO DE DESIGN LOCAL DO COLLAPSER (Fácil de modularizar/fatiar!) ---
+            self.contacts_padding_closed = 100  # Espaçamento inferior do cabeçalho quando fechado
+            self.contacts_padding_opened = 20   # Espaçamento inferior da lista aberta
+            self.contacts_padding_loading = 50  # Espaçamento inferior da lista durante o carregamento (compensação do tamanho do loader)
             
-            arrow = "▲" if self.contacts_expanded else "▼"
+            self.contacts_header_frame = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent", height=28, cursor="hand2")
+            header_pady = (0, 0) if self.contacts_expanded else (0, self.contacts_padding_closed)
+            self.contacts_header_frame.pack(fill="x", padx=5, pady=header_pady)
+            
+            arrow = "▼" if self.contacts_expanded else "▶"
             self.lbl_contacts_header = ctk.CTkLabel(
                 self.contacts_header_frame, text=f"{arrow} Contatos Sincronizados",
                 font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
@@ -443,7 +461,7 @@ class HistoryWindow(ctk.CTkToplevel):
             
             self.contacts_container = ctk.CTkFrame(self.sidebar_scroll, fg_color="transparent")
             if self.contacts_expanded:
-                self.contacts_container.pack(fill="x")
+                self.contacts_container.pack(fill="x", pady=(0, self.contacts_padding_opened))
 
     def update_chats_list(self, chats_list):
         """Atualiza apenas o container de conversas ativas na sidebar."""
@@ -455,9 +473,6 @@ class HistoryWindow(ctk.CTkToplevel):
         
         # Filtra localmente se houver busca
         q = self.search_var.get().strip().lower() if hasattr(self, 'search_var') else ""
-        if q == "🔍 buscar...":
-            q = ""
-            
         if q:
             filtered_chats = [c for c in chats_list if q in c.get("name", "").lower() or q in c.get("lastMessage", {}).get("text", "").lower()]
         else:
@@ -547,9 +562,6 @@ class HistoryWindow(ctk.CTkToplevel):
         
         # Filtra localmente se houver busca
         q = self.search_var.get().strip().lower() if hasattr(self, 'search_var') else ""
-        if q == "🔍 buscar...":
-            q = ""
-            
         if q:
             filtered_contacts = [c for c in contacts_list if q in c.get("name", "").lower()]
         else:
@@ -560,6 +572,13 @@ class HistoryWindow(ctk.CTkToplevel):
         # Limpa apenas os widgets do container de contatos
         for widget in self.contacts_container.winfo_children():
             widget.destroy()
+            
+        # Força o Canvas a limpar os resíduos e pixels fantasmas imediatamente
+        if hasattr(self, 'sidebar_scroll') and hasattr(self.sidebar_scroll, '_parent_canvas'):
+            try:
+                self.sidebar_scroll._parent_canvas.update_idletasks()
+            except Exception:
+                pass
             
         # Limpa do self.chat_cards apenas os JIDs que pertencem aos contatos sincronizados filtrados
         contact_jids = {c.get("jid") for c in filtered_contacts}
@@ -633,6 +652,12 @@ class HistoryWindow(ctk.CTkToplevel):
             )
             lbl_more.pack(pady=10)
             
+        if self.contacts_expanded:
+            # Agora que a lista está pronta, removemos o espaçamento do cabeçalho e aplicamos no rodapé do container da lista!
+            self.contacts_header_frame.pack_configure(pady=(0, 0))
+            self.contacts_container.pack_configure(pady=(0, self.contacts_padding_opened))
+            self.after(150, lambda: self.scroll_sidebar_down(0.03))
+            
         print(f"[UI DEBUG] Contatos atualizados em {(time.perf_counter() - t0)*1000:.2f}ms")
  
     def toggle_contacts(self):
@@ -643,23 +668,56 @@ class HistoryWindow(ctk.CTkToplevel):
         self.contacts_expanded = not self.contacts_expanded
         self.ensure_containers_exist()
         
-        arrow = "▲" if self.contacts_expanded else "▼"
+        arrow = "▼" if self.contacts_expanded else "▶"
         self.lbl_contacts_header.configure(text=f"{arrow} Contatos Sincronizados")
         
         if self.contacts_expanded:
-            self.contacts_container.pack(fill="x")
-            if not self.contacts:
-                # Mostra estado de carregamento inicial
-                lbl_no_contacts = ctk.CTkLabel(
-                    self.contacts_container, text="Carregando contatos...",
-                    font=ctk.CTkFont(size=11), text_color="#8E8E93"
-                )
-                lbl_no_contacts.pack(pady=10)
+            # Zeramos o padding do cabeçalho, e colocamos o padding de carregamento (compensado) no contêiner.
+            # A soma total sob o cabeçalho fica exatamente igual à de fechado! O cabeçalho fica 100% estático, sem mover 1 pixel!
+            self.contacts_header_frame.pack_configure(pady=(0, 0))
+            self.contacts_container.pack(fill="x", pady=(0, self.contacts_padding_loading))
+            
+            # Limpa widgets anteriores do container de contatos
+            for widget in self.contacts_container.winfo_children():
+                widget.destroy()
                 
+            # Força o Canvas a se limpar e preparar para desenhar o loader novo
+            if hasattr(self, 'sidebar_scroll') and hasattr(self.sidebar_scroll, '_parent_canvas'):
+                try:
+                    self.sidebar_scroll._parent_canvas.update_idletasks()
+                except Exception:
+                    pass
+                
+            # Mostra estado de carregamento com texto em azul premium (#007AFF)
+            lbl_loading = ctk.CTkLabel(
+                self.contacts_container, text="Carregando contatos...",
+                font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
+                text_color="#007AFF" # Azul premium iOS/Apple
+            )
+            lbl_loading.pack(pady=15)
+            
+            # Rola a barra lateral suavemente um pouco para baixo
+            self.after(200, lambda: self.scroll_sidebar_down())
+            
+            if not self.all_contacts:
+                # Se não há contatos carregados, solicita do backend de forma real
                 if self.on_contacts_request_callback:
                     self.on_contacts_request_callback()
+            else:
+                # Transição visual premium: exibe o carregamento em azul por 350ms antes de mostrar a lista
+                self.after(350, lambda: self.update_contacts_list(self.all_contacts) if self.contacts_expanded else None)
         else:
+            # Ao fechar, desempacotamos completamente o contêiner para que ele não ocupe espaço (evita scrollbar gigante!)
             self.contacts_container.pack_forget()
+            
+            # E voltamos o padding de 100px no cabeçalho
+            self.contacts_header_frame.pack_configure(pady=(0, self.contacts_padding_closed))
+            
+            if hasattr(self, 'sidebar_scroll') and hasattr(self.sidebar_scroll, '_parent_canvas'):
+                try:
+                    self.sidebar_scroll._parent_canvas.update_idletasks()
+                except Exception:
+                    pass
             
         print(f"[UI DEBUG] Contatos toggled em {(time.perf_counter() - t0)*1000:.2f}ms")
  
@@ -670,15 +728,47 @@ class HistoryWindow(ctk.CTkToplevel):
         if hasattr(self, 'all_contacts'):
             self.update_contacts_list(self.all_contacts)
 
+    def scroll_sidebar_down(self, fraction=0.02):
+        """Rola a barra lateral um pouco para baixo (move o conteúdo para cima) por uma fração decimal do scroll."""
+        if hasattr(self, 'sidebar_scroll') and hasattr(self.sidebar_scroll, '_parent_canvas'):
+            try:
+                # Força o Tkinter a calcular a geometria e o novo scrollregion imediatamente
+                self.sidebar_scroll._parent_canvas.update_idletasks()
+                
+                # Obtém a faixa visível atual (ex: (start_y, end_y))
+                current_view = self.sidebar_scroll._parent_canvas.yview()
+                start_y = current_view[0]
+                
+                # --- VALOR DE ROLAGEM RELATIVA (Edite aqui para alterar a intensidade!) ---
+                # Ex: 0.15 significa rolar 15% do tamanho total do container para baixo
+                new_y = min(1.0, start_y + fraction)
+                
+                self.sidebar_scroll._parent_canvas.yview_moveto(new_y)
+            except Exception as e:
+                print(f"[UI DEBUG] Erro ao rolar a sidebar: {e}")
+
+    def show_search_placeholder(self):
+        """Exibe a camada visual do placeholder com posicionamento padronizado em um só lugar."""
+        if hasattr(self, 'search_placeholder') and hasattr(self, 'search_var'):
+            if not self.search_var.get().strip():
+                # --- VALORES DE POSICIONAMENTO PADRONIZADOS (Edite aqui para alterar tudo de uma vez!) ---
+                pos_x = 10
+                pos_rely = 0.5
+                pos_anchor = "w"
+                pos_height = 20  # Altura em pixels do placeholder
+                
+                self.search_placeholder.configure(height=pos_height)
+                self.search_placeholder.place(x=pos_x, rely=pos_rely, anchor=pos_anchor)
+
     def on_search_change(self):
         """Gerencia o debounce do campo de busca para evitar renderizações excessivas."""
         if hasattr(self, 'search_debounce_timer') and self.search_debounce_timer is not None:
             self.after_cancel(self.search_debounce_timer)
             self.search_debounce_timer = None
             
-        # Se a busca estiver vazia ou for o placeholder, remove o filtro instantaneamente (0ms) para máxima fluidez
+        # Se a busca estiver vazia, remove o filtro instantaneamente (0ms) para máxima fluidez
         q = self.search_var.get().strip()
-        if not q or q == "🔍 Buscar...":
+        if not q:
             self.filter_sidebar()
         else:
             self.search_debounce_timer = self.after(800, self.filter_sidebar)
@@ -755,8 +845,8 @@ class HistoryWindow(ctk.CTkToplevel):
             
         # Limpa a busca ao voltar para o dashboard
         if hasattr(self, 'search_var'):
-            self.search_var.set("🔍 Buscar...")
-            self.search_entry.configure(text_color="#8E8E93")
+            self.search_var.set("")
+            self.show_search_placeholder()
             
         # Limpa o destaque de todos os cards com proteção robusta contra widgets destruídos
         jids_to_remove = []
