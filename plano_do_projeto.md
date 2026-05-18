@@ -101,7 +101,7 @@ wand-whatsapp-server/
 ## 🌟 FASE 4: A APLICAÇÃO COMPLETA (Implementar apenas após aprovação da Fase 3)
 **Objetivo:** UI completa, motor de privacidade e filtros avançados.
 
-*   **4.1. UI Master-Detail (`main.py`):** Adicionar um Sidebar (contatos) à esquerda do Dashboard/Chat.
+*   **[X] 4.1. UI Master-Detail (`main.py` e `ui_components.py`):** Adicionar um Sidebar (contatos) à esquerda e tela de histórico geral na direita como estado inicial (Feed geral macOS). Incluído o botão **Dashboard** premium na barra lateral que permite retornar a esta visualização agregada inicial a qualquer momento limpando o estado de seleção.
 *   **4.2. Auto-Privacy (Toast do Cliente):** Atualizar o Toast para borrar o texto após X segundos e empilhar badges vermelhos de contagem. Clicar no Toast abre o Chat correspondente.
 *   **4.3. Web UI e Configurações (`src/config.js`):** Criar os botões na UI do Python ou na interface Web do servidor para gerenciar Whitelist/Blacklist (Contatos, Grupos e Canais), Modo Não Perturbe e Tempo de Censura. O Node deve aplicar os filtros (descartando mensagens da blacklist na raiz).
 *   **4.4. Pipeline de Mídia (Baileys + Python):** Implementar os 3 estágios de economia de dados: (1) Preview Thumbnail -> (2) Download em RAM sob demanda -> (3) Gravar em Disco.
@@ -142,6 +142,14 @@ wand-whatsapp-server/
 - `setInterval` refatorado para chamar uma função `async` (`persistStores`).
 - `fs.writeFileSync()` substituído por `await fs.promises.writeFile()` (não-bloqueante).
 - O Event Loop agora permanece livre para processar mensagens e conexões WS durante a persistência.
+
+### Fix 4 — Servidor Node.js: Concorrência e Locks no SQLite (`server/src/database.js`)
+
+**Problema:** O SQLite (de arquivo único) sofria locks de concorrência com o Baileys escrevendo novas mensagens em segundo plano. Consultas rápidas e sequenciais (`get_chat_history`) geravam erros `SQLITE_BUSY: database is locked`, capturados no catch silenciosamente, fazendo com que a UI Python exibisse conversas vazias até o destravamento do arquivo.
+
+**Correção aplicada:**
+- Habilitado o modo **WAL (Write-Ahead Logging)** (`PRAGMA journal_mode = WAL`), que permite a leitores paralelos realizarem buscas de histórico simultaneamente a gravações sem bloqueios.
+- Definido um **`busy_timeout` de 10 segundos** (`PRAGMA busy_timeout = 10000`), para que o SQLite gerencie a fila de concorrência de forma suave e aguarde liberação em vez de dar erro instantâneo de lock.
 
 ---
 **Fim das Especificações.**

@@ -19,6 +19,8 @@ class WANDClient:
         
         self.current_toast: Optional[ToastNotification] = None
         self.history_window: Optional[HistoryWindow] = None
+        self.chats = []
+        self.selected_jid = None
         # queue.Queue é thread-safe: a thread asyncio escreve, a thread Tkinter lê.
         # A lista simples anterior não garantia isso.
         self.msg_queue: queue.Queue = queue.Queue()
@@ -116,20 +118,40 @@ class WANDClient:
                 return
 
         if not self.history_window or not self.history_window.winfo_exists():
-            self.history_window = HistoryWindow(self.root, on_send_callback=self.send_reply)
+            self.history_window = HistoryWindow(
+                self.root, 
+                on_send_callback=self.send_reply,
+                on_chat_selected_callback=self.select_chat
+            )
         
         self.history_window.deiconify()
         self.history_window.focus_force()
         self.history_window.lift()
 
         # Agenda a requisição de dados apenas ao abrir a janela inicialmente
-        self.root.after(50, self._request_history)
+        self.root.after(50, self._request_chats)
 
-    def _request_history(self):
-        """Envia o pedido de histórico ao servidor via WebSocket."""
+    def _request_chats(self):
+        """Envia o pedido de lista de chats ao servidor via WebSocket."""
         self._dispatch(
-            self.network.send_command("get_history", {"limit": 50})
+            self.network.send_command("get_chats", {})
         )
+        if not self.selected_jid:
+            self._dispatch(
+                self.network.send_command("get_history", {"limit": 50})
+            )
+
+    def select_chat(self, jid):
+        """Define o chat selecionado e solicita o histórico correspondente."""
+        self.selected_jid = jid
+        if jid is None:
+            self._dispatch(
+                self.network.send_command("get_history", {"limit": 50})
+            )
+        else:
+            self._dispatch(
+                self.network.send_command("get_chat_history", {"jid": jid, "limit": 50})
+            )
 
     def send_reply(self, remote_jid, text):
         """Dispara comando de resposta via websocket"""
@@ -162,15 +184,22 @@ class WANDClient:
 
                     # Atualiza a janela de histórico em tempo real se ela estiver aberta
                     if self.history_window and self.history_window.winfo_exists():
-                        new_msg = {
-                            "remoteJid": data.get("remoteJid", ""),
-                            "senderName": data.get("senderName", sender),
-                            "receiverName": data.get("receiverName", ""),
-                            "text": text,
-                            "timestamp": data.get("timestamp", 0),
-                            "fromMe": 1 if sender == "Você" else 0
-                        }
-                        self.history_window.add_message_to_top(new_msg)
+                        self.history_window.handle_incoming_message(data)
+                        # Solicita get_chats atualizado para reordenar a sidebar
+                        self._request_chats()
+
+                elif msg_type == "chats":
+                    chats_list = msg_data.get("data", [])
+                    self.chats = chats_list
+                    if self.history_window and self.history_window.winfo_exists():
+                        self.history_window.update_chats_list(chats_list)
+
+                elif msg_type == "chat_history":
+                    data = msg_data.get("data", {})
+                    jid = data.get("jid")
+                    messages = data.get("messages", [])
+                    if self.history_window and self.history_window.winfo_exists() and self.selected_jid == jid:
+                        self.history_window.update_chat_messages(jid, messages)
 
                 elif msg_type == "history":
                     history_list = msg_data.get("data", [])

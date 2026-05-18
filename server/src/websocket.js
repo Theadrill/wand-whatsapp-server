@@ -1,5 +1,5 @@
 import { WebSocketServer } from 'ws';
-import { getHistory } from './database.js';
+import { getHistory, getChats, getChatHistory } from './database.js';
 import { sendMessage, getMyName, formatPhoneNumber } from './whatsapp.js';
 
 let wss;
@@ -74,12 +74,81 @@ export function setupWebSocket(server) {
           });
           
           ws.send(JSON.stringify({ type: 'history', data: enrichedHistory }));
+        } else if (payload.type === 'get_chats') {
+          try {
+            const rawChats = await getChats();
+            const myName = getMyName ? getMyName() : 'Você';
+            const enrichedChats = rawChats.map(chat => {
+              let contactName = chat.contactName || chat.contactVerifiedName || chat.contactDisplayName || chat.lastSenderName || 'Desconhecido';
+              if (chat.lastFromMe === 1) {
+                contactName = myName;
+              }
+              
+              const isGroup = chat.remoteJid.endsWith('@g.us');
+              const displayName = chat.contactName || chat.contactVerifiedName || chat.contactDisplayName || chat.lastSenderName || (formatPhoneNumber ? formatPhoneNumber(chat.remoteJid) : chat.remoteJid);
+              
+              return {
+                jid: chat.remoteJid,
+                name: displayName + (isGroup ? ' (Grupo)' : ''),
+                unreadCount: 0,
+                lastMessage: {
+                  text: chat.lastText,
+                  timestamp: chat.lastTimestamp,
+                  fromMe: chat.lastFromMe === 1,
+                  senderName: chat.lastFromMe === 1 ? myName : contactName
+                }
+              };
+            });
+            
+            ws.send(JSON.stringify({ type: 'chats', data: enrichedChats }));
+          } catch (err) {
+            console.error('[WebSocket] Erro ao carregar chats:', err.message);
+          }
+        } else if (payload.type === 'get_chat_history') {
+          try {
+            const { jid } = payload;
+            const limit = payload.limit || 50;
+            const history = await getChatHistory(jid, limit);
+            
+            const myName = getMyName ? getMyName() : 'Você';
+            const enrichedMessages = history.map(msg => {
+              let contactName = msg.contactName || msg.contactVerifiedName || msg.contactDisplayName || msg.senderName || 'Desconhecido';
+              if (contactName === 'Você' && msg.fromMe === 0) {
+                contactName = formatPhoneNumber ? formatPhoneNumber(msg.remoteJid) : msg.remoteJid;
+              }
+              
+              let senderName = msg.senderName;
+              if (msg.fromMe === 1) {
+                senderName = myName;
+              }
+              
+              return {
+                id: msg.id,
+                remoteJid: msg.remoteJid,
+                senderName,
+                text: msg.text,
+                timestamp: msg.timestamp,
+                fromMe: msg.fromMe === 1
+              };
+            });
+            
+            enrichedMessages.reverse();
+            
+            ws.send(JSON.stringify({ 
+              type: 'chat_history', 
+              data: {
+                jid,
+                messages: enrichedMessages
+              } 
+            }));
+          } catch (err) {
+            console.error('[WebSocket] Erro ao buscar historico do chat:', err.message);
+          }
         } else if (payload.type === 'send_message') {
           const { remoteJid, text } = payload;
           try {
             await sendMessage(remoteJid, text);
             console.log(`[WebSocket] Resposta enviada para ${remoteJid}`);
-            // Opcional: Notificar sucesso ao cliente
             ws.send(JSON.stringify({ type: 'send_status', status: 'success', remoteJid }));
           } catch (err) {
             console.error('[WebSocket] Erro ao enviar resposta:', err.message);

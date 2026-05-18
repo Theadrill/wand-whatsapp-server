@@ -158,16 +158,21 @@ class ToastNotification(ctk.CTkToplevel):
             self.lift()
             self.after(2000, self.force_on_top)
 
+
 class HistoryWindow(ctk.CTkToplevel):
-    def __init__(self, master, history_data=None, on_send_callback=None):
+    def __init__(self, master, on_send_callback=None, on_chat_selected_callback=None):
         super().__init__(master)
         self.on_send_callback = on_send_callback
+        self.on_chat_selected_callback = on_chat_selected_callback
+        self.selected_jid = None
+        self.chats = []
+        self.chat_cards = {}
         
         # Configurações da Janela
-        self.title("W.A.N.D. - Histórico")
-        # --- CONFIGURAÇÃO DE TAMANHO DA JANELA ---
-        window_width = 450
-        window_height = 450
+        self.title("W.A.N.D. - Histórico de Mensagens")
+        # --- CONFIGURAÇÃO DE TAMANHO DA JANELA PREMIUM ---
+        window_width = 800
+        window_height = 500
         
         # Centralização automática
         screen_width = self.winfo_screenwidth()
@@ -192,11 +197,11 @@ class HistoryWindow(ctk.CTkToplevel):
             corner_radius=25,
             border_width=0
         )
-        self.main_container.place(relx=0.5, rely=0.5, relwidth=0.90, relheight=0.90, anchor="center")
+        self.main_container.place(relx=0.5, rely=0.5, relwidth=0.96, relheight=0.94, anchor="center")
         
-        # Configuração rígida do Grid
+        # Configuração rígida do Grid do Main Container
         self.main_container.grid_rowconfigure(0, weight=0) # Título: tamanho fixo
-        self.main_container.grid_rowconfigure(1, weight=1) # Conteúdo: expande totalmente
+        self.main_container.grid_rowconfigure(1, weight=1) # Conteúdo Master-Detail: expande totalmente
         self.main_container.grid_rowconfigure(2, weight=0) # Rodapé: tamanho fixo
         self.main_container.grid_columnconfigure(0, weight=1)
  
@@ -205,7 +210,7 @@ class HistoryWindow(ctk.CTkToplevel):
         self.title_bar.grid(row=0, column=0, sticky="ew", pady=(5, 5), padx=20)
         
         self.title_label = ctk.CTkLabel(
-            self.title_bar, text="Histórico de Notificações",
+            self.title_bar, text="W.A.N.D. Chat & Histórico",
             font=ctk.CTkFont(family="Segoe UI Variable Display", size=14, weight="bold"),
             text_color="#1D1D1F"
         )
@@ -238,7 +243,7 @@ class HistoryWindow(ctk.CTkToplevel):
  
         self.is_maximized = False
  
-        # --- BARRA DE RODAPÉ (Estilo Barra de Título) ---
+        # --- BARRA DE RODAPÉ ---
         self.bottom_bar = ctk.CTkFrame(self.main_container, fg_color="transparent", height=22)
         self.bottom_bar.grid(row=2, column=0, sticky="ew", pady=(3, 7), padx=20)
  
@@ -250,309 +255,444 @@ class HistoryWindow(ctk.CTkToplevel):
         )
         self.lbl_footer.place(relx=0.5, rely=0.5, anchor="center")
  
-        # Área de Scroll (Inicialmente NÃO gridada/oculta por padrão)
-        self.scrollable_frame = ctk.CTkScrollableFrame(
-            self.main_container, fg_color="transparent", corner_radius=0
+        # --- ÁREA DE CONTEÚDO MASTER-DETAIL ---
+        self.content_area = ctk.CTkFrame(self.main_container, fg_color="transparent")
+        self.content_area.grid(row=1, column=0, sticky="nsew", padx=15, pady=0)
+        self.content_area.grid_rowconfigure(0, weight=1)
+        self.content_area.grid_columnconfigure(0, weight=0) # Sidebar: largura fixa
+        self.content_area.grid_columnconfigure(1, weight=1) # Chat: expande
+        
+        # 1. Sidebar (Master)
+        self.sidebar_frame = ctk.CTkFrame(self.content_area, fg_color="#EFEFF4", width=230, corner_radius=12)
+        self.sidebar_frame.grid(row=0, column=0, sticky="ns", padx=(0, 5), pady=0)
+        self.sidebar_frame.grid_propagate(False)
+        
+        self.lbl_sidebar_title = ctk.CTkLabel(
+            self.sidebar_frame, text="Conversas Ativas",
+            font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
+            text_color="#8E8E93"
         )
- 
-        # Container interno para as mensagens (fixado no topo)
-        self.messages_container = ctk.CTkFrame(self.scrollable_frame, fg_color="transparent")
+        self.lbl_sidebar_title.pack(anchor="w", padx=15, pady=(12, 6))
+        
+        # Botão Dashboard Premium
+        self.btn_dashboard = ctk.CTkButton(
+            self.sidebar_frame, text="📊 Dashboard",
+            font=ctk.CTkFont(family="Segoe UI", size=11, weight="bold"),
+            fg_color="#007AFF", hover_color="#0059C1", text_color="#FFFFFF",
+            height=28, corner_radius=8, cursor="hand2",
+            command=self.reset_to_dashboard
+        )
+        self.btn_dashboard.pack(fill="x", padx=15, pady=(2, 8))
+        
+        self.sidebar_scroll = ctk.CTkScrollableFrame(self.sidebar_frame, fg_color="transparent", corner_radius=0)
+        self.sidebar_scroll.pack(fill="both", expand=True, padx=2, pady=(0, 5))
+        
+        # 2. Área de Chat (Detail)
+        self.chat_frame = ctk.CTkFrame(self.content_area, fg_color="#FFFFFF", corner_radius=12, border_width=1, border_color="#E5E5EA")
+        self.chat_frame.grid(row=0, column=1, sticky="nsew", padx=(5, 0), pady=0)
+        self.chat_frame.grid_rowconfigure(0, weight=0) # Cabeçalho
+        self.chat_frame.grid_rowconfigure(1, weight=1) # Balões de mensagens
+        self.chat_frame.grid_rowconfigure(2, weight=0) # Input de digitação
+        self.chat_frame.grid_columnconfigure(0, weight=1)
+        
+        # Cabeçalho do Chat
+        self.chat_header = ctk.CTkFrame(self.chat_frame, fg_color="transparent", height=45)
+        self.chat_header.grid(row=0, column=0, sticky="ew", padx=15, pady=(10, 5))
+        
+        self.lbl_active_chat = ctk.CTkLabel(
+            self.chat_header, text="Selecione uma conversa",
+            font=ctk.CTkFont(family="Segoe UI Variable Display", size=15, weight="bold"),
+            text_color="#1D1D1F"
+        )
+        self.lbl_active_chat.pack(side="left", pady=5)
+        
+        # Scroll de Mensagens
+        self.messages_scroll = ctk.CTkScrollableFrame(self.chat_frame, fg_color="#F5F5F7", corner_radius=10)
+        self.messages_scroll.grid(row=1, column=0, sticky="nsew", padx=15, pady=5)
+        
+        self.messages_container = ctk.CTkFrame(self.messages_scroll, fg_color="transparent")
         self.messages_container.pack(fill="x", side="top")
- 
-        self.update_history(history_data)
- 
-        # Movimentação
+        
+        # Mensagem Inicial
+        self.lbl_empty_chat = ctk.CTkLabel(
+            self.messages_container, text="Selecione um contato na barra lateral\npara começar a conversar.",
+            font=ctk.CTkFont(family="Segoe UI Variable Text", size=13),
+            text_color="#8E8E93",
+            justify="center"
+        )
+        self.lbl_empty_chat.pack(expand=True, pady=120)
+        
+        # Barra de Entrada de Resposta
+        self.input_container = ctk.CTkFrame(self.chat_frame, fg_color="transparent")
+        # Escondida inicialmente, só é exibida quando um chat for ativado
+        self.input_container.grid_forget()
+        
+        self.entry_message = ctk.CTkEntry(
+            self.input_container, placeholder_text="Digite uma mensagem...",
+            height=36, corner_radius=18, border_width=1,
+            fg_color="#FFFFFF", text_color="#000000", placeholder_text_color="#8E8E93"
+        )
+        self.entry_message.pack(side="left", fill="x", expand=True, padx=(0, 10))
+        
+        self.btn_send_chat = ctk.CTkButton(
+            self.input_container, text="Enviar", width=70, height=36, corner_radius=18,
+            fg_color="#007AFF", hover_color="#0056B3",
+            command=self.handle_send_message
+        )
+        self.btn_send_chat.pack(side="right")
+        
+        self.entry_message.bind("<Return>", lambda e: self.handle_send_message())
+  
+        # Movimentação arrastando a barra de título
         self.title_bar.bind("<ButtonPress-1>", self.start_move)
         self.title_bar.bind("<B1-Motion>", self.do_move)
         self.title_label.bind("<ButtonPress-1>", self.start_move)
         self.title_label.bind("<B1-Motion>", self.do_move)
- 
+  
         # Maximizar com duplo clique na barra de título
         self.title_bar.bind("<Double-Button-1>", lambda event: self.toggle_maximize())
         self.title_label.bind("<Double-Button-1>", lambda event: self.toggle_maximize())
 
- 
+        # Exibe tela de carregamento na sidebar até o primeiro get_chats responder
+        self.show_sidebar_loading()
+
+    def show_sidebar_loading(self):
+        """Mostra carregamento na barra lateral."""
+        for widget in self.sidebar_scroll.winfo_children():
+            widget.destroy()
+        lbl_load = ctk.CTkLabel(
+            self.sidebar_scroll, text="Carregando contatos...",
+            font=ctk.CTkFont(size=11), text_color="#8E8E93"
+        )
+        lbl_load.pack(pady=20)
+
     def show_loading_screen(self):
-        """Exibe a tela de carregamento centralizada diretamente na janela principal, com o scroll oculto"""
-        if hasattr(self, "loading_frame") and self.loading_frame:
-            try:
-                self.loading_frame.destroy()
-            except:
-                pass
-                
-        # Oculta o frame de scroll se ele estiver visível
-        self.scrollable_frame.grid_remove()
-        
-        # Cria um container centralizado e transparente para a animação do texto
-        self.loading_frame = ctk.CTkFrame(self.main_container, fg_color="transparent")
-        self.loading_frame.place(relx=0.5, rely=0.53, anchor="center")
-        
-        lbl_loading = ctk.CTkLabel(
-            self.loading_frame, text="Carregando mensagens...",
-            font=ctk.CTkFont(family="Segoe UI Variable Text", size=14, weight="bold"),
-            text_color="#007AFF"
-        )
-        lbl_loading.pack(pady=(0, 5))
-        
-        lbl_loading_sub = ctk.CTkLabel(
-            self.loading_frame, text="Sincronizando com o servidor W.A.N.D.",
-            font=ctk.CTkFont(family="Segoe UI Variable Text", size=11),
-            text_color="#8E8E93"
-        )
-        lbl_loading_sub.pack(pady=0)
-
-    def update_history(self, data):
-        self.current_data = data # Guarda os dados atuais para redimensionamento
-            
-        if data is None:
-            self.show_loading_screen()
-            return
-            
-        if not data:
-            # Destrói a tela de carregamento se existir
-            if hasattr(self, "loading_frame") and self.loading_frame:
-                try:
-                    self.loading_frame.destroy()
-                except:
-                    pass
-                self.loading_frame = None
-                
-            # Limpa e exibe a mensagem de lista vazia dentro do scroll
-            for widget in self.messages_container.winfo_children():
-                widget.destroy()
-            lbl_empty = ctk.CTkLabel(
-                self.messages_container, text="Nenhuma mensagem recente.",
-                font=ctk.CTkFont(size=13), text_color="#8E8E93"
-            )
-            lbl_empty.pack(pady=20)
-            
-            # Exibe o scrollable frame com a mensagem vazia
-            self.scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=0)
-            return
-
-        # --- REVELAÇÃO NATIVA (FADE-IN DIGITAL) ---
-        # 1. Limpa o container de mensagens (enquanto o scroll está ocultado/sem grid)
+        """Exibe tela de carregamento na area de mensagens."""
         for widget in self.messages_container.winfo_children():
             widget.destroy()
+        lbl_loading = ctk.CTkLabel(
+            self.messages_container, text="Carregando mensagens...",
+            font=ctk.CTkFont(family="Segoe UI Variable Text", size=13, weight="bold"),
+            text_color="#007AFF"
+        )
+        lbl_loading.pack(pady=120)
+
+    def bind_click_to_widget(self, widget, jid):
+        """Associa clique esquerdo para selecionar um chat."""
+        widget.bind("<Button-1>", lambda e: self.select_chat(jid))
+
+    def update_chats_list(self, chats_list):
+        """Atualiza a sidebar de conversas com cards interativos."""
+        self.chats = chats_list
         
-        # 2. Constrói todos os cards de forma oculta na memória
-        for msg in data:
-            self.create_message_card(msg, parent=self.messages_container)
+        for widget in self.sidebar_scroll.winfo_children():
+            widget.destroy()
             
-        # 3. Destrói o frame de carregamento
-        if hasattr(self, "loading_frame") and self.loading_frame:
-            try:
-                self.loading_frame.destroy()
-            except:
-                pass
-            self.loading_frame = None
-            
-        # 4. Envia o scrollable frame para a tela (grid ativa o motor geométrico do Tkinter)
-        self.scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=0)
+        self.chat_cards = {}
         
-        # 5. Força o redesenho síncrono dos cards prontos em frações de milissegundo
-        self.update_idletasks()
+        if not chats_list:
+            lbl_empty = ctk.CTkLabel(
+                self.sidebar_scroll, text="Nenhuma conversa ativa",
+                font=ctk.CTkFont(size=11), text_color="#8E8E93"
+            )
+            lbl_empty.pack(pady=20)
+            return
             
-        # Garante que o scroll suba ao topo ao carregar a lista
-        self.scrollable_frame._parent_canvas.yview_moveto(0)
-
-    def _adjust_scrollbar_visibility(self):
-        """Esconde ou mostra a barra de scroll dependendo do tamanho do conteúdo"""
-        try:
-            # Bbox "all" retorna (x1, y1, x2, y2) de todo o conteúdo do canvas interno
-            bbox = self.scrollable_frame._parent_canvas.bbox("all")
-            if not bbox: return
+        for chat in chats_list:
+            jid = chat.get("jid")
+            name = chat.get("name", "Desconhecido")
+            last_msg = chat.get("lastMessage", {})
+            last_text = last_msg.get("text", "")
+            last_ts = last_msg.get("timestamp", 0)
             
-            content_height = bbox[3]
-            frame_height = self.scrollable_frame._parent_canvas.winfo_height()
-
-            if content_height <= frame_height:
-                # Esconde a barra de scroll interna do CTkScrollableFrame
-                self.scrollable_frame._scrollbar.grid_forget()
-            else:
-                # self.scrollable_frame._scrollbar.grid(row=0, column=1, sticky="ns")
-                pass
-        except:
-            pass
-
-    def add_message_to_top(self, msg):
-        """Adiciona uma nova mensagem no topo do histórico de forma dinâmica e sem redesenhar toda a tela"""
-        if self.current_data is None:
-            self.current_data = []
-            
-        # Evita duplicidade (caso a mensagem já tenha sido adicionada localmente ou venha do websocket)
-        for existing in self.current_data[:3]:
-            if (existing.get("text") == msg.get("text") and 
-                existing.get("remoteJid") == msg.get("remoteJid") and 
-                abs(existing.get("timestamp", 0) - msg.get("timestamp", 0)) < 5000):
-                return
+            # Trunca o texto para caber perfeitamente na sidebar
+            if len(last_text) > 22:
+                last_text = last_text[:22] + "..."
                 
-        self.current_data.insert(0, msg)
-        
-        # Se havia a mensagem de "Nenhuma mensagem recente", remove ela
-        children = self.messages_container.winfo_children()
-        if len(children) == 1 and isinstance(children[0], ctk.CTkLabel) and children[0].cget("text") == "Nenhuma mensagem recente.":
-            children[0].destroy()
+            time_str = ""
+            if last_ts:
+                time_str = datetime.datetime.fromtimestamp(last_ts/1000).strftime("%H:%M")
+                
+            is_selected = (self.selected_jid == jid)
+            bg_color = "#D1D1D6" if is_selected else "#FFFFFF"
+            border_color = "#007AFF" if is_selected else "#E5E5EA"
             
-        # Cria o card e insere no topo
-        self.create_message_card(msg, parent=self.messages_container, prepend=True)
-        
-        # Garante que o scroll suba ao topo para ver a nova mensagem
-        self.scrollable_frame._parent_canvas.yview_moveto(0)
-        self._adjust_scrollbar_visibility()
+            # Card do Contato (Altura 60px elegante)
+            card = ctk.CTkFrame(
+                self.sidebar_scroll, fg_color=bg_color,
+                corner_radius=8, border_width=1, border_color=border_color,
+                height=60, cursor="hand2"
+            )
+            card.pack(fill="x", pady=4, padx=5)
+            card.pack_propagate(False)
+            
+            self.bind_click_to_widget(card, jid)
+            
+            # Nome do Contato
+            lbl_name = ctk.CTkLabel(
+                card, text=name,
+                font=ctk.CTkFont(family="Segoe UI", size=12, weight="bold"),
+                text_color="#000000"
+            )
+            lbl_name.place(x=10, y=8)
+            self.bind_click_to_widget(lbl_name, jid)
+            
+            # Última mensagem
+            lbl_msg = ctk.CTkLabel(
+                card, text=last_text,
+                font=ctk.CTkFont(family="Segoe UI Variable Text", size=11),
+                text_color="#3A3A3C"
+            )
+            lbl_msg.place(x=10, y=28)
+            self.bind_click_to_widget(lbl_msg, jid)
+            
+            # Hora da última mensagem
+            lbl_time = ctk.CTkLabel(
+                card, text=time_str,
+                font=ctk.CTkFont(size=9), text_color="#8E8E93"
+            )
+            lbl_time.place(relx=1.0, y=8, x=-10, anchor="ne")
+            self.bind_click_to_widget(lbl_time, jid)
+            
+            self.chat_cards[jid] = card
 
-    def create_message_card(self, msg, parent=None, is_reply_mode=False, prepend=False):
-        # Se não houver pai definido, usa o container de mensagens padrão
-        target = parent if parent else self.messages_container
+    def select_chat(self, jid):
+        """Seleciona um contato da sidebar, mudando o destaque visual e invocando a callback."""
+        if self.selected_jid == jid:
+            return
+            
+        self.selected_jid = jid
+        self.show_loading_screen()
         
-        card = ctk.CTkFrame(
-            target, fg_color="#FFFFFF",
-            corner_radius=12, border_width=1, border_color="#E5E5EA"
-        )
+        # Atualiza título do cabeçalho
+        chat_name = "Conversa"
+        for chat in self.chats:
+            if chat.get("jid") == jid:
+                chat_name = chat.get("name", "Conversa")
+                break
+        self.lbl_active_chat.configure(text=chat_name)
         
-        if prepend:
-            slaves = target.pack_slaves()
-            first_packed_child = None
-            for slave in slaves:
-                if slave != card:
-                    first_packed_child = slave
-                    break
-            if first_packed_child:
-                card.pack(fill="x", pady=5, padx=5, before=first_packed_child)
+        # Exibe a barra de entrada
+        self.input_container.grid(row=2, column=0, sticky="ew", padx=15, pady=(5, 10))
+        self.entry_message.delete(0, "end")
+        self.entry_message.focus_set()
+        
+        # Atualiza destaque dos cards na barra lateral
+        for card_jid, card in self.chat_cards.items():
+            if card_jid == jid:
+                card.configure(fg_color="#D1D1D6", border_color="#007AFF")
             else:
-                card.pack(fill="x", pady=5, padx=5)
-        else:
-            card.pack(fill="x", pady=5, padx=5)
+                card.configure(fg_color="#FFFFFF", border_color="#E5E5EA")
+                
+        # Aciona callback
+        if self.on_chat_selected_callback:
+            self.on_chat_selected_callback(jid)
 
-        # Se não estiver no modo resposta, permite clicar para responder
-        if not is_reply_mode:
-            card.configure(cursor="hand2")
-            card.bind("<Button-1>", lambda e: self.show_reply_view(msg))
+    def reset_to_dashboard(self):
+        """Reseta a visualização para a tela de mensagens recentes (Dashboard)."""
+        self.selected_jid = None
+        self.show_loading_screen()
+        
+        # Limpa o destaque de todos os cards
+        for card_jid, card in self.chat_cards.items():
+            card.configure(fg_color="#FFFFFF", border_color="#E5E5EA")
+            
+        # Aciona callback com None para carregar o histórico recente
+        if self.on_chat_selected_callback:
+            self.on_chat_selected_callback(None)
 
-        sender_name = msg.get("senderName", "Desconhecido")
-        receiver_name = msg.get("receiverName", "")
-        display_name = f"{sender_name} ---> {receiver_name}" if receiver_name else sender_name
+    def update_chat_messages(self, jid, messages):
+        """Renderiza a lista de mensagens no corpo do chat."""
+        if self.selected_jid != jid:
+            return
+            
+        # Reseta a barra de rolagem para o topo antes de limpar os widgets,
+        # evitando coordenadas de scroll fantasmas e telas cinzas vazias
+        self.messages_scroll._parent_canvas.yview_moveto(0.0)
+            
+        for widget in self.messages_container.winfo_children():
+            widget.destroy()
+            
+        if not messages:
+            lbl_empty = ctk.CTkLabel(
+                self.messages_container, text="Nenhuma mensagem nesta conversa.",
+                font=ctk.CTkFont(size=12), text_color="#8E8E93"
+            )
+            lbl_empty.pack(pady=120)
+            return
+            
+        for msg in messages:
+            self.create_message_balloon(msg)
+            
+        self.update_idletasks()
+        
+        # Agendamento assíncrono de 50ms para dar tempo ao CustomTkinter de recalcular
+        # a scrollregion real baseada na nova altura e rolar com precisão para a base
+        self.after(50, lambda: self.messages_scroll._parent_canvas.yview_moveto(1.0))
 
-        lbl_from = ctk.CTkLabel(
-            card, text=display_name,
-            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
-            text_color="#000000"
-        )
-        lbl_from.pack(anchor="w", padx=15, pady=(10, 0))
-        if not is_reply_mode: lbl_from.bind("<Button-1>", lambda e: self.show_reply_view(msg))
-
-        lbl_text = ctk.CTkLabel(
-            card, text=msg.get("text", ""),
-            font=ctk.CTkFont(family="Segoe UI Variable Text", size=13),
-            text_color="#3A3A3C", 
-            justify="left"
-        )
-        # Quebra de linha dinâmica segura baseada na largura da janela
-        width = self.winfo_width()
-        if width < 100:
-            width = 450  # Largura padrão caso a janela não esteja mapeada
-        lbl_text.configure(wraplength=width - 80)
-        lbl_text.pack(anchor="w", padx=15, pady=(5, 10))
-        if not is_reply_mode: lbl_text.bind("<Button-1>", lambda e: self.show_reply_view(msg))
-
-        # Formatação simples da data (se disponível)
+    def create_message_balloon(self, msg):
+        """Desenha balões de chat realistas à esquerda (recebidas) ou direita (enviadas)."""
+        from_me = msg.get("fromMe", False)
+        text = msg.get("text", "")
         ts = msg.get("timestamp", 0)
-        time_str = datetime.datetime.fromtimestamp(ts/1000).strftime("%H:%M") if ts else "--:--"
+        
+        time_str = datetime.datetime.fromtimestamp(ts/1000).strftime("%H:%M") if ts else ""
+        
+        row_frame = ctk.CTkFrame(self.messages_container, fg_color="transparent")
+        row_frame.pack(fill="x", padx=10, pady=4)
+        
+        bg_color = "#DCF8C6" if from_me else "#FFFFFF"
+        text_color = "#000000"
+        
+        balloon = ctk.CTkFrame(
+            row_frame, fg_color=bg_color,
+            corner_radius=10, border_width=1, border_color="#E5E5EA"
+        )
+        balloon.pack(side="right" if from_me else "left")
+        
+        # Se for mensagem curta de uma unica linha, adiciona padding de caracteres para evitar sobreposicao com o horario
+        display_text = text
+        if "\n" not in text and len(text) < 20:
+            display_text = text + "          "
+            
+        lbl_text = ctk.CTkLabel(
+            balloon, text=display_text,
+            font=ctk.CTkFont(family="Segoe UI Variable Text", size=13),
+            text_color=text_color, justify="left",
+            wraplength=350
+        )
+        lbl_text.pack(anchor="w", padx=(12, 12), pady=(8, 18))
         
         lbl_time = ctk.CTkLabel(
-            card, text=time_str, font=ctk.CTkFont(size=10), text_color="#8E8E93"
+            balloon, text=time_str,
+            font=ctk.CTkFont(size=9), text_color="#8E8E93", height=9
         )
-        lbl_time.place(relx=1.0, rely=1.0, x=-10, y=-5, anchor="se")
+        lbl_time.place(relx=1.0, rely=1.0, x=-8, y=-5, anchor="se")
 
-    def show_reply_view(self, msg):
-        """Muda a interface para o modo de resposta de uma mensagem específica"""
-        # Esconde a lista original (remove do grid temporariamente)
-        self.scrollable_frame.grid_remove()
+    def handle_send_message(self):
+        """Envia a mensagem digitada e adiciona o balão local instantâneo na UI."""
+        text = self.entry_message.get().strip()
+        if not text or not self.selected_jid:
+            return
+            
+        if self.on_send_callback:
+            self.on_send_callback(self.selected_jid, text)
+            
+        local_msg = {
+            "fromMe": True,
+            "text": text,
+            "timestamp": int(datetime.datetime.now().timestamp() * 1000)
+        }
         
-        # Container centralizado verticalmente na janela principal
-        self.reply_view = ctk.CTkFrame(self.main_container, fg_color="transparent")
-        self.reply_view.place(relx=0.5, rely=0.45, relwidth=0.9, anchor="center")
+        children = self.messages_container.winfo_children()
+        if len(children) == 1 and isinstance(children[0], ctk.CTkLabel) and "Nenhuma mensagem" in children[0].cget("text"):
+            children[0].destroy()
+            
+        self.create_message_balloon(local_msg)
+        self.entry_message.delete(0, "end")
+        self.update_idletasks()
+        self.messages_scroll._parent_canvas.yview_moveto(1.0)
+
+    def handle_incoming_message(self, data):
+        """Trata o recebimento de mensagens em tempo real na janela ativa."""
+        remote_jid = data.get("remoteJid", "")
         
-        # Card da mensagem em destaque
-        self.create_message_card(msg, parent=self.reply_view, is_reply_mode=True)
+        if self.selected_jid == remote_jid:
+            children = self.messages_container.winfo_children()
+            if len(children) == 1 and isinstance(children[0], ctk.CTkLabel) and "Nenhuma mensagem" in children[0].cget("text"):
+                children[0].destroy()
+                
+            self.create_message_balloon({
+                "fromMe": data.get("fromMe", False) or data.get("from") == "Você",
+                "text": data.get("text", ""),
+                "timestamp": data.get("timestamp", 0)
+            })
+            self.update_idletasks()
+            self.messages_scroll._parent_canvas.yview_moveto(1.0)
+
+    def update_history(self, data):
+        """Preenche a tela da direita com o feed de mensagens recentes se nenhum chat estiver selecionado."""
+        if self.selected_jid is not None:
+            return
+            
+        for widget in self.messages_container.winfo_children():
+            widget.destroy()
+            
+        self.lbl_active_chat.configure(text="Mensagens Recentes")
+        self.input_container.grid_forget()
         
-        # Campo de Input estilo Mac/iOS
-        self.reply_input = ctk.CTkEntry(
-            self.reply_view, 
-            placeholder_text="Escreva uma resposta...",
-            height=40,
-            corner_radius=20,
-            border_width=1,
-            fg_color="#FFFFFF",
-            text_color="#000000",
-            placeholder_text_color="#8E8E93"
+        if not data:
+            lbl_empty = ctk.CTkLabel(
+                self.messages_container, text="Nenhuma mensagem recente encontrada.",
+                font=ctk.CTkFont(size=12), text_color="#8E8E93"
+            )
+            lbl_empty.pack(pady=120)
+            return
+            
+        # Renderiza a lista de mensagens recentes como cards clicáveis
+        for msg in data:
+            self.create_feed_card(msg)
+            
+        self.update_idletasks()
+        self.messages_scroll._parent_canvas.yview_moveto(0)
+
+    def create_feed_card(self, msg):
+        """Cria um card premium de feed na área central, que ao ser clicado abre o chat específico do contato."""
+        jid = msg.get("remoteJid")
+        sender_name = msg.get("senderName", "Desconhecido")
+        receiver_name = msg.get("receiverName", "")
+        text = msg.get("text", "")
+        ts = msg.get("timestamp", 0)
+        from_me = msg.get("fromMe", 0) == 1 or msg.get("fromMe", False)
+        
+        time_str = datetime.datetime.fromtimestamp(ts/1000).strftime("%H:%M") if ts else ""
+        
+        # Nome formatado
+        display_name = f"{sender_name} ➔ Você" if not from_me else f"Você ➔ {receiver_name or 'Contato'}"
+        
+        # Card do Feed (clicável)
+        card = ctk.CTkFrame(
+            self.messages_container, fg_color="#FFFFFF",
+            corner_radius=12, border_width=1, border_color="#E5E5EA",
+            cursor="hand2"
         )
-        self.reply_input.pack(fill="x", padx=15, pady=20)
-        self.reply_input.focus_set()
+        card.pack(fill="x", padx=15, pady=6)
         
-        # Botão de Enviar
-        self.btn_send = ctk.CTkButton(
-            self.reply_view, text="Enviar Resposta",
-            height=35, corner_radius=18, fg_color="#007AFF", hover_color="#0056B3",
-            command=lambda: self.handle_send(msg)
-        )
-        self.btn_send.pack(pady=(0, 10), padx=15, fill="x")
-
-        # Atalho: Enter para enviar
-        self.reply_input.bind("<Return>", lambda e: self.handle_send(msg))
-
-        # Botão Voltar
-        self.btn_back = ctk.CTkButton(
-            self.reply_view, text="← Voltar",
-            fg_color="transparent", text_color="#8E8E93", hover_color="#E5E5EA",
-            width=100, height=25,
-            command=self.back_to_list
-        )
-        self.btn_back.pack(pady=5)
+        # Bind do clique no card inteiro para abrir a conversa
+        card.bind("<Button-1>", lambda e: self.select_chat(jid))
         
-        self._adjust_scrollbar_visibility()
-
-    def back_to_list(self):
-        """Volta para a visualização de lista"""
-        if hasattr(self, 'reply_view'):
-            self.reply_view.destroy()
-        # Restaura o scroll exibindo a lista original intacta que estava apenas oculta
-        self.scrollable_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=0)
-
-    def handle_send(self, msg):
-        """Coleta o texto, dispara o callback de envio e adiciona a resposta no topo do histórico sem redesenhar"""
-        text = self.reply_input.get().strip()
-        if text and self.on_send_callback:
-            remoteJid = msg.get("remoteJid")
-            if remoteJid:
-                # Chama o callback (main.py cuidará do WebSocket)
-                self.on_send_callback(remoteJid, text)
-                
-                # Pega o nome do contato a partir da mensagem original
-                contact_name = msg.get("senderName") if msg.get("fromMe") == 0 else msg.get("receiverName", "Desconhecido")
-                
-                # Prepara o objeto da mensagem enviada
-                reply_msg = {
-                    "remoteJid": remoteJid,
-                    "senderName": "Você",
-                    "receiverName": contact_name,
-                    "text": text,
-                    "timestamp": int(datetime.datetime.now().timestamp() * 1000),
-                    "fromMe": 1
-                }
-                
-                # Adiciona no topo do histórico dinamicamente
-                self.add_message_to_top(reply_msg)
-                
-                # Volta para a lista após enviar
-                self.back_to_list()
+        # Título / Remetente
+        lbl_title = ctk.CTkLabel(
+            card, text=display_name,
+            font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"),
+            text_color="#007AFF" if not from_me else "#8E8E93"
+        )
+        lbl_title.pack(anchor="w", padx=15, pady=(10, 0))
+        lbl_title.bind("<Button-1>", lambda e: self.select_chat(jid))
+        
+        # Texto da Mensagem
+        lbl_text = ctk.CTkLabel(
+            card, text=text,
+            font=ctk.CTkFont(family="Segoe UI Variable Text", size=13),
+            text_color="#1D1D1F", justify="left",
+            wraplength=480
+        )
+        lbl_text.pack(anchor="w", padx=15, pady=(5, 12))
+        lbl_text.bind("<Button-1>", lambda e: self.select_chat(jid))
+        
+        # Hora no canto inferior direito
+        lbl_time = ctk.CTkLabel(
+            card, text=time_str,
+            font=ctk.CTkFont(size=9), text_color="#8E8E93"
+        )
+        lbl_time.place(relx=1.0, rely=1.0, x=-12, y=-6, anchor="se")
 
     def start_move(self, event):
         self.x = event.x
         self.y = event.y
 
     def do_move(self, event):
-        if self.is_maximized: return # Impede mover se estiver maximizado
+        if self.is_maximized: return
         deltax = event.x - self.x
         deltay = event.y - self.y
         x = self.winfo_x() + deltax
@@ -560,63 +700,49 @@ class HistoryWindow(ctk.CTkToplevel):
         self.geometry(f"+{x}+{y}")
 
     def toggle_maximize(self):
-        # Exibe a cortina de carregamento de imediato para ocultar o processo geométrico
         self.show_loading_screen()
-        self.update_idletasks()  # Força o desenho síncrono da cortina na tela
+        self.update_idletasks()
 
         if not self.is_maximized:
-            # Salva posição original para restaurar depois
             self.old_geometry = self.geometry()
-            # Pega tamanho da tela
             sw = self.winfo_screenwidth()
             sh = self.winfo_screenheight()
             
-            # 1. Altera a cor de fundo do Toplevel para a cor sólida ANTES de expandir a janela (evita flash preto)
             self.configure(fg_color=self.bg_color)
             self.config(bg=self.bg_color)
             self.update_idletasks()
             
-            # 2. Altera a geometria e o posicionamento do container (já preenchido com a cor de fundo perfeita)
             self.geometry(f"{sw}x{sh-40}+0+0")
             self.main_container.configure(corner_radius=0)
             self.main_container.place(relwidth=1.0, relheight=1.0)
             
-            # 3. FORÇA O REDESENHO SÍNCRONO DA JANELA MAXIMIZADA E SEUS COMPONENTES IMEDIATAMENTE
             self.update_idletasks()
             self.is_maximized = True
             
-            # 4. Reconstrói os cards por trás da cortina já nas novas proporções
-            self.after(50, lambda: self.update_history(self.current_data))
-            self.after(100, self._adjust_scrollbar_visibility)
+            if self.selected_jid and self.on_chat_selected_callback:
+                self.on_chat_selected_callback(self.selected_jid)
         else:
-            # 1. Restaura primeiro a geometria e arredondamento mantendo a cor sólida ativa
             self.geometry(self.old_geometry)
             self.main_container.configure(corner_radius=25)
-            self.main_container.place(relwidth=0.90, relheight=0.90)
+            self.main_container.place(relwidth=0.96, relheight=0.94)
             
-            # 2. Sincroniza o redimensionamento físico síncrono para o tamanho menor
             self.update_idletasks()
             
-            # 3. Reativa a transparência do Toplevel aplicando a máscara (#000001) com a janela já reduzida
             self.configure(fg_color="#000001")
             self.config(bg="#000001")
             self.update_idletasks()
             
             self.is_maximized = False
             
-            # 4. Reconstrói os cards por trás da cortina já nas novas proporções
-            self.after(50, lambda: self.update_history(self.current_data))
-            self.after(100, self._adjust_scrollbar_visibility)
+            if self.selected_jid and self.on_chat_selected_callback:
+                self.on_chat_selected_callback(self.selected_jid)
 
     def minimize(self):
-        """Minimiza a janela contornando a limitação do overrideredirect"""
         self.overrideredirect(False)
         self.iconify()
-        # Monitora o estado para reativar o overrideredirect ao voltar
         self.bind("<FocusIn>", self.on_restore)
 
     def on_restore(self, event):
-        """Reativa o visual sem bordas ao restaurar a janela"""
         if self.state() == "normal":
             self.overrideredirect(True)
             self.unbind("<FocusIn>")

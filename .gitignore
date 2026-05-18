@@ -146,6 +146,7 @@ vite.config.ts.timestamp-*
 server/tmp/
 server/auth_info_baileys/
 server/*.db
+server/*.db-*
 server/baileys_store.json
 server/baileys_contacts.json
 

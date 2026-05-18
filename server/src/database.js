@@ -20,6 +20,15 @@ export async function initDatabase() {
     driver: sqlite3.Database
   });
 
+  // Habilita o modo WAL (Write-Ahead Logging) e define busy_timeout de 10s para concorrência fluida
+  try {
+    await db.run('PRAGMA journal_mode = WAL');
+    await db.run('PRAGMA busy_timeout = 10000');
+    console.log('[DB] PRAGMAs WAL e busy_timeout configurados com sucesso.');
+  } catch (pragmaError) {
+    console.error('[DB] Erro ao aplicar PRAGMAs:', pragmaError.message);
+  }
+
   await db.exec(`
     CREATE TABLE IF NOT EXISTS messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -149,3 +158,54 @@ export async function getContact(jid) {
     return null;
   }
 }
+
+/**
+ * Recupera todos os chats ativos ordenados pela última mensagem.
+ */
+export async function getChats() {
+  if (!db) await initDatabase();
+  try {
+    // Busca a última mensagem de cada remoteJid e traz o contato associado se existir
+    const rows = await db.all(`
+      SELECT 
+        m.remoteJid,
+        m.text as lastText,
+        m.timestamp as lastTimestamp,
+        m.fromMe as lastFromMe,
+        m.senderName as lastSenderName,
+        c.name as contactName,
+        c.verifiedName as contactVerifiedName,
+        c.displayName as contactDisplayName
+      FROM messages m
+      INNER JOIN (
+        SELECT remoteJid, MAX(timestamp) as max_ts
+        FROM messages
+        GROUP BY remoteJid
+      ) latest ON m.remoteJid = latest.remoteJid AND m.timestamp = latest.max_ts
+      LEFT JOIN contacts c ON m.remoteJid = c.jid
+      GROUP BY m.remoteJid
+      ORDER BY m.timestamp DESC
+    `);
+    return rows;
+  } catch (error) {
+    console.error('[DB] Erro ao buscar lista de chats:', error);
+    return [];
+  }
+}
+
+/**
+ * Recupera o histórico de mensagens de um chat específico.
+ */
+export async function getChatHistory(remoteJid, limit = 50) {
+  if (!db) await initDatabase();
+  try {
+    return await db.all(
+      'SELECT * FROM messages WHERE remoteJid = ? ORDER BY timestamp DESC LIMIT ?',
+      [remoteJid, limit]
+    );
+  } catch (error) {
+    console.error('[DB] Erro ao buscar histórico do chat:', error);
+    return [];
+  }
+}
+
